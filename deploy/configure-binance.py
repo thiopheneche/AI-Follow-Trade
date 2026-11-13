@@ -2,6 +2,7 @@
 """Validate and save credentials for one Binance Futures environment."""
 
 import argparse
+from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 import getpass
 import json
@@ -16,7 +17,7 @@ import warnings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from followtrade.binance import BASE_URLS, Futures, credentials_prefix
-from followtrade.clients import ServiceError
+from followtrade.clients import BinanceAPIError, ServiceError
 from private_config import with_environment, write_private
 
 
@@ -37,6 +38,32 @@ def restart():
     subprocess.run([*SERVICE, "restart", UNIT], check=True)
     time.sleep(2)
     subprocess.run([*SERVICE, "is-active", "--quiet", UNIT], check=True)
+
+
+@contextmanager
+def validation_step(label, rejected_key_hint):
+    try:
+        yield
+    except ServiceError as error:
+        hint = f"\n{rejected_key_hint}" if isinstance(error, BinanceAPIError) and error.code == -2015 else ""
+        raise SystemExit(f"币安验证失败（{label}）。{error}{hint}") from None
+
+
+def validate(client, mode):
+    read_hint = (f"请核对密钥是否为该 {mode} 环境的子账户 HMAC 密钥、读取权限是否已开启，"
+                 "以及 API 白名单是否包含运行此命令的服务器出口 IP。")
+    with validation_step("读取 U 本位合约账户配置", read_hint):
+        client.check_mode()
+    with validation_step("读取 U 本位合约账户和持仓", read_hint):
+        _, positions = client.account()
+        if any(Decimal(row["positionAmt"]) for row in positions):
+            raise SystemExit("初次接入请使用空仓的专用合约账户。")
+    with validation_step("查询普通和条件委托", read_hint):
+        if client.signed("/fapi/v1/openOrders") or client.signed("/fapi/v1/openAlgoOrders"):
+            raise SystemExit("请先处理专用账户已有的普通和条件委托。")
+    print("账户读取通过。正在验证合约下单权限……", flush=True)
+    with validation_step("测试下单 /fapi/v1/order/test", "账户读取已通过，请确认这把 Key 已开启「启用合约」。"):
+        client.test_order()
 
 
 def configure(mode):
@@ -60,14 +87,7 @@ def configure(mode):
                     raise SystemExit("此账户仍有仓位或待核对委托，请先处理完毕再更新密钥。")
     print(f"配置币安 {mode} 账户。")
     key, password = secret("Binance API Key: "), secret("Binance API Secret: ")
-    client = Futures(mode, key, password)
-    client.check_mode()
-    _, positions = client.account()
-    if any(Decimal(row["positionAmt"]) for row in positions):
-        raise SystemExit("初次接入请使用空仓的专用合约账户。")
-    if client.signed("/fapi/v1/openOrders") or client.signed("/fapi/v1/openAlgoOrders"):
-        raise SystemExit("请先处理专用账户已有的普通和条件委托。")
-    client.test_order()
+    validate(Futures(mode, key, password), mode)
     print("账户读取和币安测试下单接口均通过。", flush=True)
     default = "ai" if settings.get("ai", {}).get("enabled") else "fixed"
     strategy = input(f"执行策略（ai/fixed，默认 {default}）: ").strip().lower() or default
@@ -106,7 +126,5 @@ if __name__ == "__main__":
     parser.add_argument("mode", choices=BASE_URLS)
     try:
         configure(parser.parse_args().mode)
-    except ServiceError as error:
-        raise SystemExit(f"币安验证失败。{error}") from None
     except (getpass.GetPassWarning, EOFError, KeyboardInterrupt):
         raise SystemExit("录入已中止，请使用 SSH 交互终端重试。") from None
