@@ -30,6 +30,7 @@ python -m followtrade --config .\config.json
 
 | 指令 | 内容 |
 |---|---|
+| `/func`、`/help`、`/start` | 查看完整的 Bot 指令与用途 |
 | `/status` | 信号源、行情和模拟账户权益 |
 | `/positions` | 模拟仓位及按已核对成交记录的币安仓位 |
 | `/trades` | 最近模拟成交 |

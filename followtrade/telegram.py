@@ -12,6 +12,20 @@ from .store import Store, now_ms
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 PUSH_BATCH_SIZE = 12
 MODE_COMMANDS = {"/paper": "paper", "/demo": "demo", "/live": "mainnet"}
+COMMAND_HELP = (
+    "Bot 操作指令\n"
+    "/func · /help · /start  查看指令列表\n"
+    "/status  查看运行状态、行情和模拟账户权益\n"
+    "/positions  查看模拟持仓和 Bot 已核对的币安持仓\n"
+    "/trades  查看最近的本地模拟成交\n"
+    "/orders  查看最近的币安委托和成交回报\n"
+    "/mode  查看新开仓去向和已绑定的币安账户\n\n"
+    "切换新开仓去向\n"
+    "/paper  本地模拟\n"
+    "/demo  币安 Demo（虚拟资金）\n"
+    "/live  币安正式账户（真实资金）\n\n"
+    "已提交委托和已有持仓继续在原账户处理。"
+)
 
 
 def format_fill(row):
@@ -130,6 +144,8 @@ class Telegram:
 
     @staticmethod
     def reply(store, accounts, command, execution=()):
+        if command in ("/func", "/help", "/start"):
+            return COMMAND_HELP
         if command in MODE_COMMANDS:
             return choose_mode(store, execution, MODE_COMMANDS[command])
         if command == "/mode":
@@ -173,5 +189,4 @@ class Telegram:
         if command == "/trades":
             rows = store.db.execute("SELECT * FROM fills ORDER BY id DESC LIMIT 8").fetchall()
             return "\n\n".join(format_fill(r) for r in rows) or "暂无模拟成交"
-        return ("可用指令\n/status 运行状态和模拟权益\n/positions 持仓\n/trades 最近模拟成交\n/orders 币安委托\n"
-                "/mode 执行账户 · /paper 本地模拟 · /demo 币安 Demo · /live 币安正式账户")
+        return COMMAND_HELP
