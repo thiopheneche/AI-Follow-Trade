@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 import time
 from urllib.parse import urlsplit
 import warnings
@@ -16,6 +15,7 @@ import warnings
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from followtrade.clients import Model, ServiceError
 from followtrade.config import AIConfig
+from private_config import with_environment, write_private
 
 
 SERVICE = "ai-follow-trade.service"
@@ -23,21 +23,8 @@ SYSTEMCTL = ["systemctl", "--user"]
 KEY = "FOLLOWTRADE_AI_KEY"
 
 
-def write_private(path, content):
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
-        temporary = Path(file.name)
-        try:
-            file.write(content)
-            file.close()
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
-
-
 def environment_text(original, key):
-    lines = [line for line in (original or "").splitlines() if not re.match(rf"\s*{KEY}\s*=", line)]
-    quoted = re.sub(r'([\\"`$])', r'\\\1', key)
-    return "\n".join([*lines, f'{KEY}="{quoted}"', ""])
+    return with_environment(original, {KEY: key})
 
 
 def validate_model(base_url, model, key, timeout):

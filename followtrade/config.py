@@ -8,6 +8,7 @@ import re
 from urllib.parse import urlsplit
 
 from probe import portfolio_id
+from .binance import BASE_URLS, ExecutionAccount, credentials_prefix
 
 
 class ConfigError(ValueError):
@@ -51,6 +52,7 @@ class Config:
     position_stop: Decimal
     ai: AIConfig = None
     telegram: TelegramConfig = None
+    execution: tuple = ()
 
 
 def decimal_setting(raw, key, default, low, high):
@@ -115,6 +117,22 @@ def load_config(path):
     if fixed > ceiling:
         raise ConfigError("fixed_leverage exceeds max_leverage")
     slip = decimal_setting(raw, "extra_slippage_fraction", "0.0005", "0", "0.1")
+    execution = []
+    routes = raw.get("execution", {})
+    if not isinstance(routes, dict) or routes.keys() - BASE_URLS.keys():
+        raise ConfigError("execution must contain only demo and mainnet settings")
+    for mode, route in routes.items():
+        if not isinstance(route, dict):
+            raise ConfigError(f"invalid {mode} execution settings")
+        prefix = credentials_prefix(mode)
+        key, secret = os.getenv(prefix + "KEY"), os.getenv(prefix + "SECRET")
+        if not key or not secret:
+            raise ConfigError(f"{mode} execution requires its dedicated key and secret")
+        strategy = route.get("strategy", "ai" if ai else "fixed")
+        if strategy not in ("fixed", "ai") or (strategy == "ai" and ai is None):
+            raise ConfigError(f"invalid {mode} execution strategy")
+        execution.append(ExecutionAccount(mode, key, secret,
+                         decimal_setting(route, "budget_usdt", "0", "1", "10000000"), strategy))
     return Config(
         portfolio, database, decimal_setting(raw, "starting_usdt", "1000", "1", "10000000"),
         integer_setting(raw, "poll_seconds", 45, 5, 300),
@@ -127,5 +145,5 @@ def load_config(path):
         decimal_setting(raw, "estimated_taker_fee_fraction", "0.0005", "0", "0.05"), slip,
         decimal_setting(raw, "minimum_notional_usdt", "10", "0.01", "100000"),
         decimal_setting(raw, "daily_loss_fraction", "0.05", "0.0001", "1"),
-        decimal_setting(raw, "position_stop_fraction", "0.05", "0.0001", "0.99"), ai, telegram,
+        decimal_setting(raw, "position_stop_fraction", "0.05", "0.0001", "0.99"), ai, telegram, tuple(execution),
     )

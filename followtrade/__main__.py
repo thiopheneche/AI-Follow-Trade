@@ -12,6 +12,7 @@ from probe import AccessStopped, ProbeError
 
 from .clients import BinanceFeed, BinanceMarket, Model, ServiceError, check_binance_account
 from .config import load_config
+from .execution import ExchangeAccount
 from .paper import PaperEngine, current_quote
 from .store import Store, now_ms
 from .telegram import Telegram
@@ -45,6 +46,7 @@ class Runner:
     def __init__(self, config, store, pool):
         self.config, self.store, self.pool = config, store, pool
         self.accounts = ("fixed", "ai") if config.ai else ("fixed",)
+        self.execution_modes = tuple(account.mode for account in config.execution)
         self.engine = PaperEngine(store, config)
         self.feed = BinanceFeed(config.portfolio)
         self.market = BinanceMarket()
@@ -87,8 +89,9 @@ class Runner:
                                        else f"正常，最近一轮 {len(signals)} 条成交（含重复）")
             notify = self.config.telegram is not None and self.config.telegram.push_fills
             self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress,
-                              notify_lead_fills=notify)
-            self.store.ingest(late, self.accounts, now_ms(), baseline=previous is None, notify_lead_fills=notify)
+                              notify_lead_fills=notify, execution_modes=self.execution_modes)
+            self.store.ingest(late, self.accounts, now_ms(), baseline=previous is None, notify_lead_fills=notify,
+                              execution_modes=self.execution_modes)
             self.next_poll = monotonic + self.config.poll_seconds
 
     def _read_closes(self, monotonic):
@@ -108,7 +111,8 @@ class Runner:
         else:
             # A paper position can't predate bootstrap for the selected account.
             baseline = int(self.store.get("service.first_start", seen))
-            self.store.ingest((s for s in signals if s.time >= baseline), self.accounts, seen)
+            self.store.ingest((s for s in signals if s.time >= baseline), self.accounts, seen,
+                              execution_modes=self.execution_modes)
             self.update("close_status", "全平记录正常")
             self.next_close = monotonic + self.config.poll_seconds
 
@@ -252,6 +256,10 @@ def main():
     if cfg.telegram:
         telegram = threading.Thread(target=Telegram(cfg.telegram).serve, args=(cfg, accounts, stop), daemon=True)
         telegram.start()
+    execution = [threading.Thread(target=ExchangeAccount(cfg, account).serve, args=(stop,), daemon=True)
+                 for account in cfg.execution]
+    for worker in execution:
+        worker.start()
     logging.info("Paper accounts %s for portfolio %s", ", ".join(accounts), cfg.portfolio)
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -265,6 +273,8 @@ def main():
         stop.set()
         if telegram:
             telegram.join(timeout=14)
+        for worker in execution:
+            worker.join(timeout=6)
         store.db.close()
     return 0
 

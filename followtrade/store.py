@@ -41,6 +41,19 @@ CREATE TABLE IF NOT EXISTS daily (
 CREATE TABLE IF NOT EXISTS marks (
     symbol TEXT PRIMARY KEY, price TEXT NOT NULL, time INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS exchange_orders (
+    client_id TEXT PRIMARY KEY, mode TEXT NOT NULL, signal TEXT NOT NULL REFERENCES signals(identity),
+    side TEXT NOT NULL, quantity TEXT NOT NULL, leverage INTEGER NOT NULL, time INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'CHECKING', executed TEXT NOT NULL DEFAULT '0', price TEXT NOT NULL DEFAULT '0',
+    failure TEXT, notified INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS exchange_orders_mode ON exchange_orders(mode, status);
+CREATE TABLE IF NOT EXISTS exchange_positions (
+    mode TEXT NOT NULL, symbol TEXT NOT NULL, leg TEXT NOT NULL, quantity TEXT NOT NULL,
+    opened INTEGER NOT NULL, last_entry INTEGER NOT NULL, entry_signal TEXT NOT NULL REFERENCES signals(identity),
+    lead_quantity TEXT NOT NULL, PRIMARY KEY (mode, symbol)
+);
 """
 
 
@@ -86,9 +99,12 @@ class Store:
     def put(self, key, value):
         self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, str(value)))
 
-    def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False):
+    def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False,
+               execution_modes=()):
         with self.transaction():
             first_start = int(self.get("service.first_start", first_seen)) if notify_lead_fills else 0
+            selected = self.get("execution.mode", "paper")
+            selected_at = int(self.get("execution.selected_at", 0))
             for signal in signals:
                 result = self.db.execute("INSERT OR IGNORE INTO signals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (
                     signal.identity, signal.time, signal.symbol, signal.leg, signal.action,
@@ -99,6 +115,9 @@ class Store:
                 if not baseline:
                     self.db.executemany("INSERT INTO jobs VALUES (?, ?, NULL)",
                                         ((account, signal.identity) for account in accounts))
+                    for mode in execution_modes:
+                        if signal.action != "increase" or (mode == selected and signal.time >= selected_at):
+                            self.db.execute("INSERT INTO jobs VALUES (?, ?, NULL)", (mode, signal.identity))
                 if notify_lead_fills and signal.action in ("increase", "decrease") and signal.time >= first_start:
                     self.db.execute("INSERT INTO telegram_lead_fills VALUES (?)", (signal.identity,))
             for key, value in (progress or {}).items():

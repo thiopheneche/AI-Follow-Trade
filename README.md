@@ -31,14 +31,28 @@ python -m followtrade --config .\config.json
 | 指令 | 内容 |
 |---|---|
 | `/status` | 信号源、行情和模拟账户权益 |
-| `/positions` | 模拟仓位、均价、杠杆及浮盈亏 |
+| `/positions` | 模拟仓位及按已核对成交记录的币安仓位 |
 | `/trades` | 最近模拟成交 |
+| `/orders` | 最近币安委托及币安回报 |
+| `/mode` | 当前新开仓去向和已配置的币安账户 |
+| `/demo` | 新开仓交由币安 Demo 账户 |
+| `/live` | 新开仓交由币安正式账户，使用真实资金 |
+| `/paper` | 新开仓只在本地模拟，币安已有仓位继续按规则退出 |
 
 Telegram 仅接受配置好的私聊，连接失败会独立退避。推送在网络异常重试时可能重复。
 
 ## 币安账户连接
 
-用环境变量 `FOLLOWTRADE_BINANCE_KEY` 与 `FOLLOWTRADE_BINANCE_SECRET` 提供一对 HMAC 密钥。读账户检查不需要下单权限。用对应环境的密钥执行以下命令以检查签名和 USDT 账户记录。
+默认执行模式是本地模拟。在 VPS 上分别运行下面的录入命令，为目标环境输入专用的 HMAC Key、Secret、USDT 策略预算和执行策略。请使用空仓、无未成交委托的 U 本位合约账户，并设置单向持仓和单资产保证金模式。脚本先读取账户并调用币安测试下单接口，然后保存密钥到仓库外的服务环境文件。绑定后，在 Bot 私聊中选择执行账户。
+
+```powershell
+ssh -t USER@HOST 'python3 -B ~/ai-follow-trade/deploy/configure-binance.py demo'
+ssh -t USER@HOST 'python3 -B ~/ai-follow-trade/deploy/configure-binance.py mainnet'
+```
+
+每个账户的预算和仓位独立，并只执行录入时选择的 `fixed` 或 `ai` 策略。本地两套模拟继续记账。Telegram 切换适用于切换后产生的新入场信号。已发出的委托继续核对，已有仓位留在原账户处理减仓、全平和止损。币安入场使用 IOC 限价单，退出使用只减仓市价单。请求结果不确定时用客户订单编号核对，暂停该账户的新委托。止损由 Bot 根据币安账户快照触发，需要进程与币安接口可用。正式账户建议只放机器人可用资金。
+
+也可以使用临时环境变量 `FOLLOWTRADE_BINANCE_KEY` 与 `FOLLOWTRADE_BINANCE_SECRET` 做只读检查。
 
 ```powershell
 python -m followtrade --check-account demo

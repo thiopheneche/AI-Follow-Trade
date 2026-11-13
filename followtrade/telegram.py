@@ -5,11 +5,13 @@ import sqlite3
 import time
 
 from .clients import ServiceError, request_json
+from .execution import choose_mode, exchange_positions, format_exchange_order, mode_status
 from .store import Store, now_ms
 
 
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 PUSH_BATCH_SIZE = 12
+MODE_COMMANDS = {"/paper": "paper", "/demo": "demo", "/live": "mainnet"}
 
 
 def format_fill(row):
@@ -63,6 +65,19 @@ class Telegram:
                 store.db.execute("DELETE FROM telegram_lead_fills WHERE signal = ?", (row["identity"],))
         return len(pending) == PUSH_BATCH_SIZE
 
+    def push_exchange_orders(self, store, stop):
+        pending = store.db.execute(
+            "SELECT o.*, s.symbol FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
+            "WHERE o.notified=0 AND o.status<>'CHECKING' ORDER BY o.rowid LIMIT ?", (PUSH_BATCH_SIZE,),
+        ).fetchall()
+        for row in pending:
+            if stop.is_set():
+                return False
+            self.send(format_exchange_order(row))
+            with store.transaction():
+                store.db.execute("UPDATE exchange_orders SET notified=1 WHERE client_id=?", (row["client_id"],))
+        return len(pending) == PUSH_BATCH_SIZE
+
     def serve(self, config, accounts, stop):
         store = Store(config.database, config.portfolio, config.starting, accounts)
         try:
@@ -77,6 +92,7 @@ class Telegram:
                     has_backlog = False
                     if self.config.push_fills:
                         has_backlog = self.push_lead_fills(store, stop)
+                        has_backlog = self.push_exchange_orders(store, stop) or has_backlog
                         pending = store.db.execute("SELECT * FROM fills WHERE id>? ORDER BY id LIMIT ?",
                                                    (int(last_fill), PUSH_BATCH_SIZE)).fetchall()
                         for row in pending:
@@ -99,7 +115,10 @@ class Telegram:
                         text = message.get("text")
                         if chat.get("type") == "private" and chat.get("id") == self.config.chat_id and isinstance(text, str):
                             command = text.split(maxsplit=1)[0].split("@")[0] if text.strip() else ""
-                            self.send(self.reply(store, accounts, command))
+                            if command in MODE_COMMANDS and now_ms() - message.get("date", 0) * 1000 > 300_000:
+                                self.send("切换指令已过期，请重新发送。")
+                            else:
+                                self.send(self.reply(store, accounts, command, config.execution))
                         cursor = update["update_id"] + 1
                         with store.transaction():
                             store.put("telegram.next_update", cursor)
@@ -110,12 +129,20 @@ class Telegram:
             store.db.close()
 
     @staticmethod
-    def reply(store, accounts, command):
+    def reply(store, accounts, command, execution=()):
+        if command in MODE_COMMANDS:
+            return choose_mode(store, execution, MODE_COMMANDS[command])
+        if command == "/mode":
+            return mode_status(store, execution) + "\n/paper 本地模拟 · /demo 币安 Demo · /live 币安正式账户"
+        if command == "/orders":
+            rows = store.db.execute("SELECT o.*,s.symbol FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
+                                    "ORDER BY o.rowid DESC LIMIT 8").fetchall()
+            return "\n\n".join(format_exchange_order(row) for row in rows) or "暂无币安委托"
         if command == "/status":
             source = store.get("feed_status", "等待轮询")
             quotes = store.get("quote_status", "等待行情")
             close = store.get("close_status", "等待轮询")
-            lines = ["模拟跟单", f"信号源 {source}", f"全平 {close}", f"行情 {quotes}"]
+            lines = [mode_status(store, execution), f"信号源 {source}", f"全平 {close}", f"行情 {quotes}"]
             signal = store.db.execute("SELECT time, first_seen FROM signals WHERE action='increase' "
                                       "ORDER BY first_seen DESC, time DESC LIMIT 1").fetchone()
             if signal:
@@ -139,8 +166,12 @@ class Telegram:
                     lines.append(f"{account} {position['symbol']} {position['leg']} {position['leverage']}x "
                                  f"数量 {quantity:.8g} 均价 {entry:.7g} 报价 {mark:.7g} "
                                  f"浮盈亏 {pnl:+.2f} USDT（{stamp}）")
+            tracked = exchange_positions(store)
+            if tracked:
+                lines.extend(["币安持仓（按已核对成交）", *tracked])
             return "\n".join(lines)
         if command == "/trades":
             rows = store.db.execute("SELECT * FROM fills ORDER BY id DESC LIMIT 8").fetchall()
             return "\n\n".join(format_fill(r) for r in rows) or "暂无模拟成交"
-        return "可用指令\n/status 运行状态和模拟权益\n/positions 模拟持仓\n/trades 最近模拟成交"
+        return ("可用指令\n/status 运行状态和模拟权益\n/positions 持仓\n/trades 最近模拟成交\n/orders 币安委托\n"
+                "/mode 执行账户 · /paper 本地模拟 · /demo 币安 Demo · /live 币安正式账户")

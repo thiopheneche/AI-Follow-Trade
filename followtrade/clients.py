@@ -1,11 +1,9 @@
 from dataclasses import dataclass
 from decimal import Decimal
 import hashlib
-import hmac
 import json
 import time as clock
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request
 
 from probe import OPENER, ProbeError, decimal, fetch, history_rows, parse_order
@@ -15,18 +13,30 @@ class ServiceError(Exception):
     pass
 
 
-def request_json(service, url, *, body=None, headers=None, timeout=8):
+class BinanceAPIError(ServiceError):
+    def __init__(self, status, code):
+        self.status, self.code = status, code
+        super().__init__(f"Binance HTTP {status} (code {code})")
+
+
+def request_json(service, url, *, body=None, headers=None, timeout=8, method=None, binance_errors=False):
     request_headers = {"Accept": "application/json", **(headers or {})}
     payload = None
     if body is not None:
         payload = json.dumps(body, ensure_ascii=False).encode()
         request_headers["Content-Type"] = "application/json"
     try:
-        with OPENER.open(Request(url, data=payload, headers=request_headers), timeout=timeout) as response:
+        with OPENER.open(Request(url, data=payload, headers=request_headers, method=method), timeout=timeout) as response:
             raw = response.read(4_000_001)
     except HTTPError as error:
         code = error.code
-        error.close()
+        with error:
+            if binance_errors:
+                try:
+                    detail = json.loads(error.read(4096)).get("code")
+                except (ValueError, OSError, AttributeError):
+                    detail = None
+                raise BinanceAPIError(code, detail if type(detail) is int else None) from None
         raise ServiceError(f"{service}: HTTP {code}") from None
     except (URLError, OSError, ValueError):
         raise ServiceError(f"{service}: connection failed") from None
@@ -152,11 +162,9 @@ class BinanceMarket:
 
 
 def check_binance_account(key, secret, *, demo=False):
-    base = "https://demo-fapi.binance.com" if demo else "https://fapi.binance.com"
-    query = urlencode({"timestamp": int(clock.time() * 1000), "recvWindow": 5000})
-    signature = hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
-    data = request_json("Binance account", f"{base}/fapi/v3/account?{query}&signature={signature}",
-                        headers={"X-MBX-APIKEY": key})
+    from .binance import Futures
+
+    data = Futures("demo" if demo else "mainnet", key, secret).signed("/fapi/v3/account")
     if not isinstance(data, dict) or not isinstance(data.get("assets"), list):
         raise ServiceError("Binance account: unexpected response")
     return any(isinstance(asset, dict) and asset.get("asset") == "USDT" for asset in data["assets"])
