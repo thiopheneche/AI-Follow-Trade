@@ -1,10 +1,15 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
 import sqlite3
+import time
 
 from .clients import ServiceError, request_json
 from .store import Store, now_ms
+
+
+UTC_PLUS_8 = timezone(timedelta(hours=8))
+PUSH_BATCH_SIZE = 12
 
 
 def format_fill(row):
@@ -16,9 +21,22 @@ def format_fill(row):
     )
 
 
+def format_lead_fill(row):
+    direction = {"LONG": "多头", "SHORT": "空头"}[row["leg"]]
+    action = {"increase": "开仓/加仓", "decrease": "减仓/平仓"}[row["action"]]
+    updated, seen = (datetime.fromtimestamp(row[key] / 1000, UTC_PLUS_8).strftime("%m-%d %H:%M:%S")
+                     for key in ("time", "first_seen"))
+    return (
+        f"[带单员成交] {row['symbol']} {direction}{action}\n"
+        f"成交数量 {row['quantity']} · 均价 {row['price']}\n"
+        f"订单更新 {updated} · 检测到 {seen}（UTC+8）"
+    )
+
+
 class Telegram:
     def __init__(self, config):
         self.config = config
+        self.next_send = 0
 
     def call(self, method, body, timeout=8):
         result = request_json("Telegram", f"https://api.telegram.org/bot{self.config.token}/{method}",
@@ -28,7 +46,22 @@ class Telegram:
         return result.get("result")
 
     def send(self, message):
+        time.sleep(max(0, self.next_send - time.monotonic()))
+        self.next_send = time.monotonic() + 1
         self.call("sendMessage", {"chat_id": self.config.chat_id, "text": message[:4000]})
+
+    def push_lead_fills(self, store, stop):
+        pending = store.db.execute(
+            "SELECT s.* FROM telegram_lead_fills q JOIN signals s ON s.identity = q.signal "
+            "ORDER BY q.rowid LIMIT ?", (PUSH_BATCH_SIZE,),
+        ).fetchall()
+        for row in pending:
+            if stop.is_set():
+                break
+            self.send(format_lead_fill(row))
+            with store.transaction():
+                store.db.execute("DELETE FROM telegram_lead_fills WHERE signal = ?", (row["identity"],))
+        return len(pending) == PUSH_BATCH_SIZE
 
     def serve(self, config, accounts, stop):
         store = Store(config.database, config.portfolio, config.starting, accounts)
@@ -41,9 +74,11 @@ class Telegram:
                     store.put("telegram.last_fill", last_fill)
             while not stop.is_set():
                 try:
+                    has_backlog = False
                     if self.config.push_fills:
-                        pending = store.db.execute("SELECT * FROM fills WHERE id>? ORDER BY id LIMIT 12",
-                                                   (int(last_fill),)).fetchall()
+                        has_backlog = self.push_lead_fills(store, stop)
+                        pending = store.db.execute("SELECT * FROM fills WHERE id>? ORDER BY id LIMIT ?",
+                                                   (int(last_fill), PUSH_BATCH_SIZE)).fetchall()
                         for row in pending:
                             if stop.is_set():
                                 return
@@ -51,7 +86,10 @@ class Telegram:
                             with store.transaction():
                                 store.put("telegram.last_fill", row["id"])
                             last_fill = row["id"]
-                    updates = self.call("getUpdates", {"offset": cursor, "timeout": 8, "limit": 20,
+                        has_backlog = has_backlog or len(pending) == PUSH_BATCH_SIZE
+                    if stop.is_set():
+                        break
+                    updates = self.call("getUpdates", {"offset": cursor, "timeout": 0 if has_backlog else 8, "limit": 20,
                                                        "allowed_updates": ["message"]}, timeout=12)
                     if not isinstance(updates, list):
                         raise ServiceError("Telegram: malformed updates")

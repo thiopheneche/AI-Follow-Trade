@@ -5,12 +5,13 @@ from decimal import Decimal
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event
 import unittest
 from unittest.mock import patch
 
 from followtrade.__main__ import OrderTask, Runner
 from followtrade.clients import BinanceFeed, Model, Quote, ServiceError, Signal
-from followtrade.config import AIConfig, load_config
+from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.paper import PaperEngine
 from followtrade.store import Store
 from followtrade.telegram import Telegram
@@ -142,6 +143,50 @@ class PaperTest(unittest.TestCase):
             runner._ready_ai()
         self.assertEqual(self.store.positions("ai"), [])
         self.assertEqual(self.store.db.execute("SELECT result FROM jobs").fetchone()[0], "model deadline exceeded")
+
+    def test_telegram_lead_fills_retry_without_needing_simulated_fills(self):
+        accounts = ("fixed",)
+        cfg = replace(self.cfg, telegram=TelegramConfig("123:fake", 456, True))
+        runner = Runner(cfg, self.store, None)
+        with self.store.transaction():
+            self.store.put("service.first_start", NOW - 3000)
+        baseline = observed("baseline", at=NOW - 4000)
+        entry = observed("new-entry", leg="LONG")
+        exit_order = observed("new-exit", action="decrease", at=NOW, qty="10")
+        delayed_before_start = observed("old", at=NOW - 5000)
+        close = observed("position-history", action="close", at=NOW)
+        for orders, late in (([baseline, entry], []), ([baseline, entry], [delayed_before_start, exit_order]),
+                             ([entry, exit_order], [])):
+            task = Future()
+            task.set_result((orders, NOW, NOW - 300_000, late))
+            runner.order_task = OrderTask(task, NOW)
+            runner._read_orders(0)
+        self.store.ingest([close], accounts, NOW)
+        self.assertEqual(Telegram.reply(self.store, accounts, "/trades"), "暂无模拟成交")
+
+        bot = Telegram(cfg.telegram)
+        with patch.object(bot, "send", side_effect=ServiceError("network error")):
+            with self.assertRaises(ServiceError):
+                bot.push_lead_fills(self.store, Event())
+
+        stop = Event()
+        bot = Telegram(cfg.telegram)
+
+        def call(method, body, **_options):
+            if method == "getUpdates":
+                stop.set()
+                return []
+            self.assertEqual(body["chat_id"], cfg.telegram.chat_id)
+
+        with patch.object(bot, "call", side_effect=call) as telegram, patch("followtrade.telegram.time.sleep"):
+            bot.serve(cfg, accounts, stop)
+        messages = [c.args[1]["text"] for c in telegram.call_args_list if c.args[0] == "sendMessage"]
+        self.assertEqual(len(messages), 2)
+        self.assertIn(f"{SYMBOL} 多头开仓/加仓", messages[0])
+        self.assertIn("成交数量 10 · 均价 100", messages[1])
+        with patch.object(bot, "send") as send:
+            bot.push_lead_fills(self.store, Event())
+            send.assert_not_called()
 
 
 class ClientsTest(unittest.TestCase):

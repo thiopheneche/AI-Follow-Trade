@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS signals (
     first_seen INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS source_closes ON signals (symbol, leg, time) WHERE action = 'close';
+CREATE TABLE IF NOT EXISTS telegram_lead_fills (
+    signal TEXT PRIMARY KEY REFERENCES signals(identity)
+);
 CREATE TABLE IF NOT EXISTS jobs (
     account TEXT NOT NULL, signal TEXT NOT NULL, result TEXT,
     PRIMARY KEY (account, signal), FOREIGN KEY (signal) REFERENCES signals(identity)
@@ -83,16 +86,21 @@ class Store:
     def put(self, key, value):
         self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, str(value)))
 
-    def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None):
+    def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False):
         with self.transaction():
+            first_start = int(self.get("service.first_start", first_seen)) if notify_lead_fills else 0
             for signal in signals:
                 result = self.db.execute("INSERT OR IGNORE INTO signals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (
                     signal.identity, signal.time, signal.symbol, signal.leg, signal.action,
                     str(signal.quantity), str(signal.price), signal.opened, first_seen,
                 ))
-                if result.rowcount and not baseline:
+                if not result.rowcount:
+                    continue
+                if not baseline:
                     self.db.executemany("INSERT INTO jobs VALUES (?, ?, NULL)",
                                         ((account, signal.identity) for account in accounts))
+                if notify_lead_fills and signal.action in ("increase", "decrease") and signal.time >= first_start:
+                    self.db.execute("INSERT INTO telegram_lead_fills VALUES (?)", (signal.identity,))
             for key, value in (progress or {}).items():
                 self.put(key, value)
 

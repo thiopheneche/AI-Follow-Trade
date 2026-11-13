@@ -26,7 +26,7 @@ python -m followtrade --config .\config.json
 
 ## Telegram
 
-通过 BotFather 创建 Bot，在 Telegram 私聊里先向 Bot 发一条消息。用 Bot API 的 `getUpdates` 查看这条消息的 `message.chat.id`，将正整数填入 `telegram.chat_id`。通过进程环境变量 `FOLLOWTRADE_TELEGRAM_TOKEN` 提供 Bot Token。同一个 Bot 的更新由一个实例读取。开启 `telegram.push_fills` 后会推送新模拟成交，设置为 `false` 可仅查询。
+通过 BotFather 创建 Bot，在 Telegram 私聊里先向 Bot 发一条消息。用 Bot API 的 `getUpdates` 查看这条消息的 `message.chat.id`，将正整数填入 `telegram.chat_id`。通过进程环境变量 `FOLLOWTRADE_TELEGRAM_TOKEN` 提供 Bot Token。同一个 Bot 的更新由一个实例读取。开启 `telegram.push_fills` 后会推送监控启动后首次检测到的带单员成交，以及各模拟账户的新成交。带单员成交按公开订单记录去重，即使策略跳过也会通知。设置为 `false` 可仅查询。
 
 | 指令 | 内容 |
 |---|---|

@@ -85,8 +85,10 @@ class Runner:
             gap = progress.get("orders.gap") or self.store.get("orders.gap")
             progress["feed_status"] = ("检测到轮询缺口，暂停新增敞口" if gap
                                        else f"正常，最近一轮 {len(signals)} 条成交（含重复）")
-            self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress)
-            self.store.ingest(late, self.accounts, now_ms(), baseline=previous is None)
+            notify = self.config.telegram is not None and self.config.telegram.push_fills
+            self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress,
+                              notify_lead_fills=notify)
+            self.store.ingest(late, self.accounts, now_ms(), baseline=previous is None, notify_lead_fills=notify)
             self.next_poll = monotonic + self.config.poll_seconds
 
     def _read_closes(self, monotonic):
