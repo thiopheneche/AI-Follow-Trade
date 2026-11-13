@@ -1,0 +1,52 @@
+# AI Follow Trade
+
+监控币安合约带单员的公开成交，用实时报价同时维护固定策略和 AI 策略的模拟账户。默认组合为熬鹰资本 `5075281354358777856`。程序使用 Python 3.9+ 标准库、SQLite 和按需调用的远程模型，适合单进程部署在 2 核 1 GB 的 Linux VPS。执行路径为模拟账本。
+
+## 本机运行
+
+```powershell
+Copy-Item .\config.example.json .\config.json
+python -m followtrade --config .\config.json --once
+python -m followtrade --config .\config.json
+```
+
+`--once` 检查公开订单和正式行情，一项失败就返回非零。正常运行后按 Ctrl+C 停止。启动时默认只开固定策略模拟账户，初始预算为 1,000 USDT。已有数据库会继续复用原模拟余额，修改 `starting_usdt` 只影响新账户。对同一数据库只运行一个机器人实例。用另一份配置和数据库可以开始一轮独立模拟。
+
+设置 `portfolio_id`、分配预算和各项敞口上限后，按允许的请求频率设置 `poll_seconds`。订单源初次成功采集只建立基线。之后按重叠时间窗采集，窗口结果超过 50 条会分段补齐。长时间中断超出回补窗口会记录缺口，暂停新增敞口并继续处理可归属的退出。检查缺口后，可用新数据库从空仓重建模拟基线，保留原库用于审计。访问拦截会停止信号源请求，需要先检查 VPS 出口和服务可用性。
+
+订单首次观测时间、跳过原因和两套模拟成交保存在 SQLite。入场使用买卖一档加设定滑点，按订单更新时间判断 5 分钟新鲜度，超时则跳过。实际发布延迟和一档可成交量需要另行验证。全平以带单员的仓位历史核对，减仓比例按可见成交估计。止损与日亏保护按本机可读报价轮询执行。模拟包含显式手续费及滑点，资金费、历史合约过滤器、盘口深度、逐仓强平和真实成交另有差异。
+
+## 启用 AI
+
+在本机配置中设置 `ai.enabled=true`、`ai.base_url`、`ai.model` 和 `ai.trader_profile`。`base_url` 为支持 Chat Completions 的 HTTPS API 根路径，通常以 `/v1` 结尾。通过进程环境变量 `FOLLOWTRADE_AI_KEY` 提供模型密钥。
+
+模型只收到带单员画像、已观测成交、报价、模拟账户敞口和限制，输出跟单或跳过、目标名义仓位占比和建议杠杆。程序限制单合约与全账户的名义敞口、占用保证金和最大杠杆。已持有同合约时使用原杠杆。模型错误或超时会跳过该次 AI 入场，固定策略和减平仓继续运行。AI 账户从启用后新发现的信号开始。
+
+## Telegram
+
+通过 BotFather 创建 Bot，在 Telegram 私聊里先向 Bot 发一条消息。用 Bot API 的 `getUpdates` 查看这条消息的 `message.chat.id`，将正整数填入 `telegram.chat_id`。通过进程环境变量 `FOLLOWTRADE_TELEGRAM_TOKEN` 提供 Bot Token。同一个 Bot 的更新由一个实例读取。开启 `telegram.push_fills` 后会推送新模拟成交，设置为 `false` 可仅查询。
+
+| 指令 | 内容 |
+|---|---|
+| `/status` | 信号源、行情和模拟账户权益 |
+| `/positions` | 模拟仓位、均价、杠杆及浮盈亏 |
+| `/trades` | 最近模拟成交 |
+
+Telegram 仅接受配置好的私聊，连接失败会独立退避。推送在网络异常重试时可能重复。
+
+## 币安账户连接
+
+用环境变量 `FOLLOWTRADE_BINANCE_KEY` 与 `FOLLOWTRADE_BINANCE_SECRET` 提供一对 HMAC 密钥。读账户检查不需要下单权限。用对应环境的密钥执行以下命令以检查签名和 USDT 账户记录。
+
+```powershell
+python -m followtrade --check-account demo
+python -m followtrade --check-account mainnet
+```
+
+账户检查只查询 `GET /fapi/v3/account`，模拟预算使用配置中的 USDT。订单信号、AI 决策和 Telegram 查询均无需币安账户密钥。
+
+VPS 部署可以用 `systemd` 管理一个 Python 进程，将配置、数据库和密钥放在仓库之外，目录赋予服务用户写权限。Windows 可直接运行相同模块。Git 忽略本机配置、密钥文件及账本数据。
+
+```powershell
+python -m unittest discover -s tests -v
+```

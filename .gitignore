@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+config.json
+state/
+*.sqlite*
+*.db
+*.log
+/backtest_orders.json
+/backtest_results*.json
+/backtest_equity.png
+/回测结果.md
+/技术调研报告.md

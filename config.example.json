@@ -1,0 +1,30 @@
+{
+  "portfolio_id": "5075281354358777856",
+  "database": "state/paper.sqlite3",
+  "starting_usdt": "1000",
+  "poll_seconds": 45,
+  "max_signal_age_seconds": 300,
+  "fixed_margin_fraction": "0.05",
+  "fixed_leverage": 3,
+  "max_leverage": 10,
+  "symbol_notional_fraction": "0.45",
+  "gross_notional_fraction": "1.20",
+  "margin_fraction": "0.40",
+  "max_entry_deviation_fraction": "0.005",
+  "estimated_taker_fee_fraction": "0.0005",
+  "extra_slippage_fraction": "0.0005",
+  "minimum_notional_usdt": "10",
+  "daily_loss_fraction": "0.05",
+  "position_stop_fraction": "0.05",
+  "ai": {
+    "enabled": false,
+    "base_url": "",
+    "model": "",
+    "timeout_seconds": 10,
+    "trader_profile": "熬鹰资本曾在同方向连续小单加仓或减仓。使用已经观察到的成交和当前可执行报价。带单员实际仓位、保证金和杠杆未知。"
+  },
+  "telegram": {
+    "chat_id": null,
+    "push_fills": true
+  }
+}
