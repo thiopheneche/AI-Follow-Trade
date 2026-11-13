@@ -131,8 +131,8 @@ def load_config(path):
         strategy = route.get("strategy", "ai" if ai else "fixed")
         if strategy not in ("fixed", "ai") or (strategy == "ai" and ai is None):
             raise ConfigError(f"invalid {mode} execution strategy")
-        execution.append(ExecutionAccount(mode, key, secret,
-                         decimal_setting(route, "budget_usdt", "0", "1", "10000000"), strategy))
+        budget = decimal_setting(route, "budget_usdt", "0", "1", "10000000") if mode == "demo" else None
+        execution.append(ExecutionAccount(mode, key, secret, budget, strategy))
     return Config(
         portfolio, database, decimal_setting(raw, "starting_usdt", "1000", "1", "10000000"),
         integer_setting(raw, "poll_seconds", 45, 5, 300),

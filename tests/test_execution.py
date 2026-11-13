@@ -1,5 +1,6 @@
 from dataclasses import replace
 from decimal import Decimal
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -25,7 +26,7 @@ class ExecutionTest(TestCase):
         tmp = TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         demo = ExecutionAccount("demo", "demo-key", "demo-secret", D(1000), "fixed")
-        mainnet = ExecutionAccount("mainnet", "mainnet-key", "mainnet-secret", D(1000), "fixed")
+        mainnet = ExecutionAccount("mainnet", "mainnet-key", "mainnet-secret", None, "fixed")
         cfg = load_config(Path(__file__).resolve().parents[1] / "config.example.json")
         self.cfg = replace(cfg, database=Path(tmp.name) / "test.sqlite", execution=(demo, mainnet))
         self.store = Store(self.cfg.database, cfg.portfolio, cfg.starting, ("fixed",))
@@ -142,3 +143,38 @@ class ExecutionTest(TestCase):
         self.assertTrue(demo.args[1].startswith("https://demo-fapi.binance.com/"))
         self.assertTrue(live.args[1].startswith("https://fapi.binance.com/"))
         self.assertEqual([item.kwargs["headers"]["X-MBX-APIKEY"] for item in (demo, live)], ["demo-key", "live-key"])
+
+    def test_mainnet_uses_wallet_equity_with_no_configured_budget(self):
+        settings = self.cfg.database.with_name("config.json")
+        settings.write_text(json.dumps({"execution": {"mainnet": {"budget_usdt": "100", "strategy": "fixed"}}}),
+                            encoding="utf-8")
+        with patch.dict("os.environ", {"FOLLOWTRADE_BINANCE_MAINNET_KEY": "live-key",
+                                      "FOLLOWTRADE_BINANCE_MAINNET_SECRET": "live-secret"}):
+            mainnet = load_config(settings).execution[0]
+        self.assertIsNone(mainnet.budget)
+        trader = ExchangeAccount(self.cfg, mainnet)
+        trader.client = self.client
+        choose_mode(self.store, self.cfg.execution, "mainnet")
+        with self.store.transaction():
+            self.store.put("execution.wallet_basis.mainnet", "900")
+        self.observe("live-entry")
+        trader.tick(self.store)
+        order = self.orders[-1]
+        notional = D(order["quantity"]) * D(order["price"])
+        self.assertGreater(notional, D("149.80"))
+        self.assertLessEqual(notional, D(150))
+        self.assertIn("按子账户 USDT 权益", Telegram.reply(self.store, ("fixed",), "/mode", self.cfg.execution))
+
+    def test_account_mode_error_identifies_which_setting_is_wrong(self):
+        client = Futures("mainnet", "live-key", "secret")
+        account_config = {"dualSidePosition": False, "multiAssetsMargin": False, "canTrade": True}
+        with patch.object(client, "signed", return_value=account_config):
+            client.check_mode()
+            account_config["multiAssetsMargin"] = True
+            with self.assertRaisesRegex(ServiceError, "保证金资产模式为多资产") as error:
+                client.check_mode()
+            self.assertNotIn("双向持仓", str(error.exception))
+            account_config.update(dualSidePosition=True, multiAssetsMargin=False)
+            with self.assertRaisesRegex(ServiceError, "持仓模式为双向持仓") as error:
+                client.check_mode()
+            self.assertNotIn("多资产", str(error.exception))

@@ -59,16 +59,6 @@ def configure(mode):
                         and db.execute(f"SELECT 1 FROM {table} WHERE mode=?" + extra, (mode,)).fetchone()):
                     raise SystemExit("此账户仍有仓位或待核对委托，请先处理完毕再更新密钥。")
     print(f"配置币安 {mode} 账户。")
-    try:
-        budget = Decimal(input("策略预算（USDT）: ").strip())
-        if not budget.is_finite() or not 1 <= budget <= 10_000_000:
-            raise InvalidOperation
-    except InvalidOperation:
-        raise SystemExit("预算须为 1 到 10,000,000 USDT。") from None
-    default = "ai" if settings.get("ai", {}).get("enabled") else "fixed"
-    strategy = input(f"执行策略（ai/fixed，默认 {default}）: ").strip().lower() or default
-    if strategy not in ("ai", "fixed") or (strategy == "ai" and default != "ai"):
-        raise SystemExit("请填写已启用的 ai 或 fixed 策略。")
     key, password = secret("Binance API Key: "), secret("Binance API Secret: ")
     client = Futures(mode, key, password)
     client.check_mode()
@@ -79,10 +69,23 @@ def configure(mode):
         raise SystemExit("请先处理专用账户已有的普通和条件委托。")
     client.test_order()
     print("账户读取和币安测试下单接口均通过。", flush=True)
+    default = "ai" if settings.get("ai", {}).get("enabled") else "fixed"
+    strategy = input(f"执行策略（ai/fixed，默认 {default}）: ").strip().lower() or default
+    if strategy not in ("ai", "fixed") or (strategy == "ai" and default != "ai"):
+        raise SystemExit("请填写已启用的 ai 或 fixed 策略。")
+    route_config = {"strategy": strategy}
+    if mode == "demo":
+        try:
+            budget = Decimal(input("Demo 策略预算（USDT）: ").strip())
+            if not budget.is_finite() or not 1 <= budget <= 10_000_000:
+                raise InvalidOperation
+        except InvalidOperation:
+            raise SystemExit("预算须为 1 到 10,000,000 USDT。") from None
+        route_config["budget_usdt"] = str(budget)
     original_env = env_path.read_text(encoding="utf-8") if env_path.exists() else None
     prefix = credentials_prefix(mode)
     values = {prefix + "KEY": key, prefix + "SECRET": password}
-    settings.setdefault("execution", {})[mode] = {"budget_usdt": str(budget), "strategy": strategy}
+    settings.setdefault("execution", {})[mode] = route_config
     try:
         write_private(env_path, with_environment(original_env, values))
         write_private(settings_path, json.dumps(settings, ensure_ascii=False, indent=2) + "\n")

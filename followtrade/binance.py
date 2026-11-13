@@ -3,6 +3,7 @@ from decimal import Decimal, DecimalException, ROUND_DOWN, ROUND_UP
 import hashlib
 import hmac
 import time
+from typing import Optional
 from urllib.parse import urlencode
 
 from .clients import ServiceError, request_json
@@ -35,7 +36,7 @@ class ExecutionAccount:
     mode: str
     key: str
     secret: str
-    budget: Decimal
+    budget: Optional[Decimal]
     strategy: str
 
 
@@ -74,10 +75,24 @@ class Futures:
 
     def check_mode(self):
         mode = self.signed("/fapi/v1/accountConfig")
-        if mode.get("dualSidePosition") is not False or mode.get("multiAssetsMargin") is not False:
-            raise ServiceError("Binance requires one-way position and single-asset margin mode")
-        if mode.get("canTrade") is not True:
-            raise ServiceError("Binance Futures account cannot trade")
+        if not isinstance(mode, dict):
+            raise ServiceError("币安未返回有效的 U 本位合约账户配置。")
+        problems = []
+        for field, enabled, disabled in (
+            ("dualSidePosition", "持仓模式为双向持仓，请在子账户的 U 本位合约设置里切换为单向持仓（One-way Mode）。",
+             "币安未返回有效的持仓模式（dualSidePosition）。"),
+            ("multiAssetsMargin", "保证金资产模式为多资产，请在 U 本位合约页面点击 M，切换为单资产模式（Single-Asset Mode）。",
+             "币安未返回有效的保证金资产模式（multiAssetsMargin）。"),
+        ):
+            value = mode.get(field)
+            if value is True or value == "true":
+                problems.append(enabled)
+            elif value is not False and value != "false":
+                problems.append(disabled)
+        if problems:
+            raise ServiceError("\n".join(problems))
+        if mode.get("canTrade") is not True and mode.get("canTrade") != "true":
+            raise ServiceError("该 U 本位合约账户当前不可交易，请检查账户状态。")
 
     def filters(self, symbol):
         if self.rules_until <= time.monotonic():

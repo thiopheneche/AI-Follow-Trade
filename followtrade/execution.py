@@ -20,7 +20,8 @@ def mode_status(store, accounts):
     for account in accounts:
         count = store.db.execute("SELECT COUNT(*) FROM exchange_positions WHERE mode=?", (account.mode,)).fetchone()[0]
         state = store.get(f"execution.health.{account.mode}", "等待检查")
-        lines.append(f"{MODE_LABELS[account.mode]} · {account.strategy} · 预算 {account.budget:f} USDT · {count} 个仓位 · {state}")
+        funds = "按子账户 USDT 权益" if account.budget is None else f"预算 {account.budget:f} USDT"
+        lines.append(f"{MODE_LABELS[account.mode]} · {account.strategy} · {funds} · {count} 个仓位 · {state}")
     return "\n".join(lines)
 
 
@@ -260,13 +261,17 @@ class ExchangeAccount:
         if missing:
             raise ServiceError(f"{', '.join(sorted(missing))} 币安未返回 Bot 记录中的仓位，请检查账户")
         wallet = as_decimal(asset["walletBalance"])
+        equity = wallet + as_decimal(asset["unrealizedProfit"])
+        budget = self.account.budget
         with store.transaction():
-            basis_key = f"execution.wallet_basis.{self.mode}"
-            if store.get(basis_key) is None:
-                store.put(basis_key, max(ZERO, wallet - self.account.budget))
-            reserved = Decimal(store.get(basis_key))
-            equity = min(self.account.budget, wallet + as_decimal(asset["unrealizedProfit"]) - reserved)
-            daily_key = f"execution.daily.{self.mode}.{utc_day(now_ms())}"
+            if budget is not None:
+                basis_key = f"execution.wallet_basis.{self.mode}"
+                if store.get(basis_key) is None:
+                    store.put(basis_key, max(ZERO, wallet - budget))
+                equity = min(budget, equity - Decimal(store.get(basis_key)))
+            # Keep the full-wallet loss baseline separate from any older budget-based baseline.
+            basis = self.mode if budget is not None else f"{self.mode}.wallet"
+            daily_key = f"execution.daily.{basis}.{utc_day(now_ms())}"
             day_start = Decimal(store.get(daily_key, equity))
             if store.get(daily_key) is None:
                 store.put(daily_key, equity)
