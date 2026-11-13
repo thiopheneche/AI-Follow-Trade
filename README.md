@@ -20,6 +20,8 @@ python -m followtrade --config .\config.json
 
 在本机配置中设置 `ai.enabled=true`、`ai.base_url`、`ai.model` 和 `ai.trader_profile`。`base_url` 为支持 Chat Completions 的 HTTPS API 根路径，通常以 `/v1` 结尾。通过进程环境变量 `FOLLOWTRADE_AI_KEY` 提供模型密钥。
 
+对于本项目的 VPS 部署，从本机终端运行 `ssh -t USER@HOST 'python3 -B ~/ai-follow-trade/deploy/configure-ai.py'`。按提示填写服务商的 Base URL、模型 ID 和 API Key。密钥输入不回显。脚本先用虚构信号验证模型响应，再将密钥保存到仅服务用户可读的 `~/.config/ai-follow-trade/secrets.env`，启用 AI 账户并重启 `ai-follow-trade.service`。
+
 模型只收到带单员画像、已观测成交、报价、模拟账户敞口和限制，输出跟单或跳过、目标名义仓位占比和建议杠杆。程序限制单合约与全账户的名义敞口、占用保证金和最大杠杆。已持有同合约时使用原杠杆。模型错误或超时会跳过该次 AI 入场，固定策略和减平仓继续运行。AI 账户从启用后新发现的信号开始。
 
 ## Telegram
