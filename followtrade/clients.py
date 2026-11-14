@@ -123,7 +123,8 @@ class BinanceFeed:
             rows = history_rows(data)
             total = data.get("total")
             if type(total) is not int or total < len(rows):
-                raise ProbeError("unusable order count")
+                raise ProbeError(f"unusable order count (total={total if type(total) is int else type(total).__name__}, "
+                                 f"rows={len(rows)})")
             if total > 50 or len(rows) < total:
                 if left == right:
                     raise ProbeError("unreadable orders at one timestamp")

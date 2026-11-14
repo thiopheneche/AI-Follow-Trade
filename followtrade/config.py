@@ -149,7 +149,7 @@ def load_config(path):
         execution.append(ExecutionAccount(mode, key, secret, budget, strategy))
     return Config(
         portfolio, database, decimal_setting(raw, "starting_usdt", "1000", "1", "10000000"),
-        integer_setting(raw, "poll_seconds", 45, 5, 300),
+        integer_setting(raw, "poll_seconds", 30, 5, 300),
         integer_setting(raw, "max_signal_age_seconds", 300, 15, 300),
         decimal_setting(raw, "fixed_margin_fraction", "0.05", "0.0001", "1"), fixed, ceiling,
         decimal_setting(raw, "symbol_notional_fraction", "0.45", "0.0001", "20"),

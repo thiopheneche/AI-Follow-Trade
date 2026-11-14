@@ -74,12 +74,14 @@ class Runner:
         except AccessStopped as error:
             self.access_stopped = True
             self.update("feed_status", "访问被拒绝，等待人工检查后重启")
-            logging.warning("Binance public feed stopped: %s", error)
+            logging.warning("Order poll stopped portfolio=%s started_ms=%d elapsed_ms=%d error=%s",
+                            self.feed.portfolio, end, now_ms() - end, error)
         except ProbeError as error:
             self.poll_failures += 1
-            self.next_poll = monotonic + min(600, self.config.poll_seconds * 2 ** min(self.poll_failures, 5))
-            self.update("feed_status", "订单源失败，正在退避")
-            logging.warning("Binance order poll failed: %s", error)
+            self.next_poll = monotonic + self.config.poll_seconds
+            self.update("feed_status", f"订单源本轮失败，{self.config.poll_seconds} 秒后重试")
+            logging.warning("Order poll failed portfolio=%s started_ms=%d elapsed_ms=%d retry_seconds=%d error=%s",
+                            self.feed.portfolio, end, now_ms() - end, self.config.poll_seconds, error)
         else:
             self.poll_failures = 0
             previous = self.store.get("orders.last_end")
@@ -91,11 +93,25 @@ class Runner:
             progress["feed_status"] = ("检测到轮询缺口，暂停新增敞口" if gap
                                        else f"正常，最近一轮 {len(signals)} 条成交（含重复）")
             notify = self.config.telegram is not None and self.config.telegram.push_fills
-            self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress,
-                              notify_lead_fills=notify, execution_modes=self.execution_modes, source=self.feed.portfolio)
-            self.store.ingest(late, self.accounts, now_ms(), baseline=previous is None, notify_lead_fills=notify,
-                              execution_modes=self.execution_modes, source=self.feed.portfolio)
-            self.next_poll = monotonic + self.config.poll_seconds
+            new_orders = self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress,
+                                           notify_lead_fills=notify, execution_modes=self.execution_modes,
+                                           source=self.feed.portfolio)
+            finished = now_ms()
+            new_late = self.store.ingest(late, self.accounts, finished, baseline=previous is None,
+                                         notify_lead_fills=notify, execution_modes=self.execution_modes,
+                                         source=self.feed.portfolio)
+            latest = max((signal.time for signal in signals), default=None)
+            logging.info("Order poll ok portfolio=%s window_start_ms=%d started_ms=%d window_elapsed_ms=%d "
+                         "elapsed_ms=%d signals=%d latest_update_ms=%s new=%d late_new=%d",
+                         self.feed.portfolio, start, end, seen - end, finished - end, len(signals), latest,
+                         len(new_orders), len(new_late))
+            if previous is not None:
+                for added, observed in ((new_orders, seen), (new_late, finished)):
+                    for signal in added:
+                        logging.info("Lead fill detected portfolio=%s symbol=%s side=%s action=%s order_update_ms=%d "
+                                     "first_seen_ms=%d age_ms=%d",
+                                     self.feed.portfolio, signal.symbol, signal.leg, signal.action,
+                                     signal.time, observed, observed - signal.time)
 
     def _read_closes(self, monotonic):
         if not self.close_task or not self.close_task.done():
@@ -109,8 +125,8 @@ class Runner:
             logging.warning("Binance public feed stopped: %s", error)
         except ProbeError as error:
             self.update("close_status", "全平记录暂不可读")
-            self.next_close = monotonic + max(self.config.poll_seconds, 90)
-            logging.warning("Binance close poll failed: %s", error)
+            self.next_close = monotonic + self.config.poll_seconds
+            logging.warning("Binance close poll failed, retry in %d seconds: %s", self.config.poll_seconds, error)
         else:
             # A paper position can't predate bootstrap for the selected account.
             baseline = int(self.store.get("service.first_start", seen))
@@ -224,6 +240,7 @@ class Runner:
                     self.next_head = monotonic + 180
                 self.order_task = OrderTask(
                     self.pool.submit(collect, self.feed, previous, now, include_head=include_head), now)
+                self.next_poll = monotonic + self.config.poll_seconds
             elif monotonic >= self.next_close:
                 self.close_task = self.pool.submit(close_batch, self.feed)
         stop.wait(1)
@@ -307,6 +324,7 @@ def main():
     for worker in execution:
         worker.start()
     logging.info("Paper accounts %s for portfolio %s", ", ".join(accounts), store.active_trader())
+    logging.info("Order poll interval: %d seconds", cfg.poll_seconds)
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
             runner = Runner(cfg, store, pool, model_pool)

@@ -2,7 +2,7 @@
   "portfolio_id": "5075281354358777856",
   "database": "state/paper.sqlite3",
   "starting_usdt": "1000",
-  "poll_seconds": 45,
+  "poll_seconds": 30,
   "max_signal_age_seconds": 300,
   "fixed_margin_fraction": "0.05",
   "fixed_leverage": 3,

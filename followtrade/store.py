@@ -173,13 +173,14 @@ class Store:
 
     def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False,
                execution_modes=(), source=None):
+        added = []
         with self.transaction():
             first_start = int(self.get("service.first_start", first_seen)) if notify_lead_fills else 0
             selected = self.get("execution.mode", "paper")
             selected_at = int(self.get("execution.selected_at", 0))
             trader = self.active_trader()
             if source is not None and trader != source:
-                return
+                return added
             cutoff = int(self.get("trader.cutoff", 0))
             draining = self.get("trader.pending") is not None
             namespace = trader != self.get("portfolio")
@@ -197,6 +198,7 @@ class Store:
                 ))
                 if not result.rowcount:
                     continue
+                added.append(signal)
                 if not baseline and (signal.action != "increase" or not draining):
                     self.db.executemany("INSERT INTO jobs VALUES (?, ?, NULL)",
                                         ((account, identity) for account, after in paper_cutoffs.items()
@@ -208,6 +210,7 @@ class Store:
                     self.db.execute("INSERT INTO telegram_lead_fills VALUES (?)", (identity,))
             for key, value in (progress or {}).items():
                 self.put(key, value)
+        return added
 
     def pending(self, account):
         rows = self.db.execute(

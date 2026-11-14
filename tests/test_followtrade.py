@@ -167,6 +167,35 @@ class PaperTest(unittest.TestCase):
         self.assertEqual(self.store.positions("ai"), [])
         self.assertIn("平仓", Telegram.reply(self.store, runner.accounts, "/trades"))
 
+    def test_order_poll_retries_on_normal_interval_and_logs_new_signal_age(self):
+        cfg = replace(self.cfg, poll_seconds=30)
+        runner = Runner(cfg, self.store, None)
+        with self.store.transaction():
+            self.store.put("orders.last_end", NOW - 90_000)
+        for i in range(3):
+            runner.order_task = OrderTask(Future(), NOW)
+            runner.order_task.future.set_exception(ProbeError("transient source failure"))
+            with self.assertLogs(level="WARNING") as logs:
+                runner._read_orders(i * 31)
+            self.assertEqual(runner.next_poll, i * 31 + 30)
+            self.assertIn("retry_seconds=30", logs.output[0])
+            self.assertEqual(self.store.get("orders.last_end"), str(NOW - 90_000))
+
+        runner.order_task = OrderTask(Future(), NOW)
+        runner.order_task.future.set_result(([observed("new")], NOW + 10, NOW - 300_000, []))
+        with patch("followtrade.__main__.now_ms", return_value=NOW + 20), self.assertLogs(level="INFO") as logs:
+            runner._read_orders(100)
+        self.assertIn("signals=1", logs.output[0])
+        self.assertIn("age_ms=1010", logs.output[1])
+        self.assertEqual(runner.poll_failures, 0)
+        self.assertIn("正常", self.store.get("feed_status"))
+
+        runner.order_task = OrderTask(Future(), NOW)
+        runner.order_task.future.set_exception(AccessStopped("HTTP 429"))
+        with self.assertLogs(level="WARNING"):
+            runner._read_orders(130)
+        self.assertTrue(runner.access_stopped)
+
     def test_ai_deadline_marks_job_and_does_not_allow_late_fill(self):
         cfg = replace(self.cfg, ai=AIConfig("https://example.test/v1", "test", "fake", 5, "profile"))
         runner = Runner(cfg, self.store, None)
