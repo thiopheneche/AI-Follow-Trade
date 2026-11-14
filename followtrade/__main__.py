@@ -148,16 +148,17 @@ class Runner:
         message = None
         now = now_ms()
         elapsed = max(0, self.config.ai.timeout + (now - deadline) / 1000)
+        trader = self.store.trader_label(signal.portfolio)
         try:
             decision = task.result()
         except ServiceError as error:
             if self.config.telegram:
-                message = format_ai_decision("ai", signal, 0, None, str(error), elapsed)
+                message = format_ai_decision("ai", signal, 0, None, str(error), elapsed, trader=trader)
             self.engine.process("ai", signal, self.quote_data, None, now, dead_reason=str(error), ai_message=message)
         else:
             reason = "feed unavailable" if self.store.get("orders.gap") or self.access_stopped or self.poll_failures else None
             if self.config.telegram:
-                message = format_ai_decision("ai", signal, self.ai_equity, decision, elapsed=elapsed)
+                message = format_ai_decision("ai", signal, self.ai_equity, decision, elapsed=elapsed, trader=trader)
             self.engine.process("ai", signal, self.quote_data, decision, now, dead_reason=reason, ai_message=message)
 
     def _jobs(self, now):
@@ -186,7 +187,8 @@ class Runner:
             signal, _task, _deadline = self.ai_task
             # Keep a single in-flight request until its transport finishes.
             reason = "model deadline exceeded"
-            message = (format_ai_decision("ai", signal, 0, None, "模型响应超时", self.config.ai.timeout)
+            message = (format_ai_decision("ai", signal, 0, None, "模型响应超时", self.config.ai.timeout,
+                                          trader=self.store.trader_label(signal.portfolio))
                        if self.config.telegram else None)
             self.engine.process("ai", signal, self.quote_data, None, now, dead_reason=reason, ai_message=message)
 

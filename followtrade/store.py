@@ -112,6 +112,18 @@ class Store:
     def active_trader(self):
         return self.get("trader.active") or self.get("portfolio")
 
+    def trader_name(self, portfolio):
+        name = self.get(f"trader.name.{portfolio}")
+        if name is None and portfolio == self.active_trader():
+            name = self.get("trader.active_name")
+        return name if name and name != portfolio else None
+
+    def trader_label(self, portfolio):
+        if portfolio is None:
+            return None
+        name = self.trader_name(portfolio)
+        return f"{name}（{portfolio}）" if name else portfolio
+
     def request_trader(self, portfolio, nickname):
         with self.transaction():
             if self.active_trader() == portfolio:
@@ -151,6 +163,7 @@ class Store:
             )
             self.put("trader.active", portfolio)
             self.put("trader.active_name", nickname)
+            self.put(f"trader.name.{portfolio}", nickname)
             self.put("trader.cutoff", cutoff)
             self.put("orders.last_end", cutoff)
             self.put("feed_status", "等待新交易员成交轮询")

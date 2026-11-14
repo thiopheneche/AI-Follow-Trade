@@ -45,11 +45,11 @@ python -m followtrade.trader 5075281354358777856 --history-page 1 --raw binance-
 | 指令 | 内容 |
 |---|---|
 | `/func`、`/help`、`/start` | 查看完整的 Bot 指令与用途 |
-| `/status` | 信号源、行情和模拟账户权益 |
+| `/status` | 当前带单员昵称和组合 ID、信号源、行情和模拟账户权益 |
 | `/positions` | 模拟仓位及按已核对成交记录的币安仓位 |
 | `/trades` | 最近模拟成交 |
 | `/orders` | 最近币安委托及币安回报 |
-| `/trader`、`/trader <ID>` | 查看目标并提示输入组合 ID，或直接切换。也接受币安带单详情链接 |
+| `/trader`、`/trader <ID>` | 显示当前带单员昵称和组合 ID，或直接切换。也接受币安带单详情链接 |
 | `/trader cancel` | 取消尚未生效的切换 |
 | `/mode` | 当前新开仓去向和已配置的币安账户 |
 | `/demo` | 新开仓交由币安 Demo 账户 |

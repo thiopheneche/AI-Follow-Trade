@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
+from threading import Event
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -47,11 +48,13 @@ class SwitchTraderTest(TestCase):
             return self.bot.handle_message(self.store, self.runner.accounts, (), text, sent_at)
 
     def test_telegram_accepts_prompt_reply_and_rejects_invalid_target(self):
-        self.assertIn(self.old, self.message("/trader@Bot"))
+        with patch("followtrade.telegram.BinanceFeed") as factory:
+            factory.return_value.trader_name.return_value = "熬鹰资本"
+            self.assertIn(f"熬鹰资本（{self.old}）", self.message("/trader@Bot"))
         self.assertIn("请输入", self.message("https://example.test/wrong"))
         with patch("followtrade.telegram.BinanceFeed") as factory:
             feed = factory.return_value
-            feed.active_name.return_value = "新交易员"
+            feed.trader_name.return_value = "新交易员"
             feed.orders.side_effect = ProbeError("public feed unavailable")
             self.assertIn("币安暂无法验证", self.message(TARGET))
             self.assertIsNone(self.store.get("trader.pending"))
@@ -65,6 +68,17 @@ class SwitchTraderTest(TestCase):
             feed.orders.assert_called_with(NOW - 300_000, NOW)
             feed.closures.assert_called_once()
         self.assertIn("已过期", self.message(f"/trader {TARGET}", sent_at=NOW // 1000 - 301))
+
+    def test_telegram_caches_official_name_for_existing_target_and_fill_notifications(self):
+        with patch("followtrade.telegram.BinanceFeed") as factory:
+            factory.return_value.trader_name.return_value = "熬鹰资本"
+            self.assertIn(f"熬鹰资本（{self.old}）", self.message("/status"))
+            self.assertIn(f"熬鹰资本（{self.old}）", self.message("/trader"))
+            factory.assert_called_once_with(self.old)
+        self.store.ingest([signal("entry")], ("fixed",), NOW, source=self.old, notify_lead_fills=True)
+        with patch.object(self.bot, "send") as send:
+            self.bot.push_lead_fills(self.store, Event())
+            self.assertIn(f"带单员 熬鹰资本（{self.old}）", send.call_args.args[0])
 
     def test_waits_for_positions_and_inflight_poll_and_suppresses_old_entries(self):
         opening = signal("old-open", at=NOW - 2000)

@@ -165,7 +165,8 @@ class PaperTest(unittest.TestCase):
         self.assertEqual(Telegram.reply(self.store, accounts, "/trades"), "暂无模拟成交")
 
         bot = Telegram(cfg.telegram)
-        with patch.object(bot, "send", side_effect=ServiceError("network error")):
+        with patch.object(bot, "send", side_effect=ServiceError("network error")), \
+                patch("followtrade.telegram.BinanceFeed.trader_name", return_value="熬鹰资本"):
             with self.assertRaises(ServiceError):
                 bot.push_lead_fills(self.store, Event())
 
@@ -178,7 +179,8 @@ class PaperTest(unittest.TestCase):
                 return []
             self.assertEqual(body["chat_id"], cfg.telegram.chat_id)
 
-        with patch.object(bot, "call", side_effect=call) as telegram, patch("followtrade.telegram.time.sleep"):
+        with patch.object(bot, "call", side_effect=call) as telegram, patch("followtrade.telegram.time.sleep"), \
+                patch("followtrade.telegram.BinanceFeed.trader_name", return_value="熬鹰资本"):
             bot.serve(cfg, accounts, stop)
         messages = [c.args[1]["text"] for c in telegram.call_args_list if c.args[0] == "sendMessage"]
         self.assertEqual(len(messages), 2)

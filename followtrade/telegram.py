@@ -43,14 +43,14 @@ def format_fill(row):
     )
 
 
-def format_lead_fill(row):
+def format_lead_fill(row, trader):
     direction = {"LONG": "多头", "SHORT": "空头"}[row["leg"]]
     action = {"increase": "开仓/加仓", "decrease": "减仓/平仓"}[row["action"]]
     updated, seen = (datetime.fromtimestamp(row[key] / 1000, UTC_PLUS_8).strftime("%m-%d %H:%M:%S")
                      for key in ("time", "first_seen"))
     return (
         f"[带单员成交] {row['symbol']} {direction}{action}\n"
-        f"组合 ID {row['portfolio']}\n"
+        f"带单员 {trader}\n"
         f"成交数量 {row['quantity']} · 均价 {row['price']}\n"
         f"订单更新 {updated} · 检测到 {seen}（UTC+8）"
     )
@@ -81,7 +81,9 @@ class Telegram:
         for row in pending:
             if stop.is_set():
                 break
-            self.send(format_lead_fill(row))
+            portfolio = row["portfolio"]
+            label = self.resolve_trader_label(store, portfolio)
+            self.send(format_lead_fill(row, label))
             with store.transaction():
                 store.db.execute("DELETE FROM telegram_lead_fills WHERE signal = ?", (row["identity"],))
         return len(pending) == PUSH_BATCH_SIZE
@@ -119,10 +121,34 @@ class Telegram:
                 store.db.execute("DELETE FROM settings WHERE key='trader.notification' AND value=?", (message,))
 
     @staticmethod
+    def resolve_trader_label(store, portfolio):
+        if portfolio is None:
+            return None
+        if not store.trader_name(portfolio):
+            retry_key = f"trader.name_retry.{portfolio}"
+            now = now_ms()
+            if now < int(store.get(retry_key, 0)):
+                return store.trader_label(portfolio)
+            try:
+                name = BinanceFeed(portfolio).trader_name()
+            except ProbeError:
+                name = None
+            with store.transaction():
+                if name and name != portfolio:
+                    store.put(f"trader.name.{portfolio}", name)
+                    store.db.execute("DELETE FROM settings WHERE key=?", (retry_key,))
+                else:
+                    store.put(retry_key, now + COMMAND_MAX_AGE_MS)
+        return store.trader_label(portfolio)
+
+    @staticmethod
     def trader_status(store):
         current = store.active_trader()
-        name = store.get("trader.active_name")
-        lines = [f"目标带单员 {name}（{current}）" if name and name != current else f"目标带单员 {current}"]
+        label = Telegram.resolve_trader_label(store, current)
+        if current != store.active_trader():
+            current = store.active_trader()
+            label = store.trader_label(current)
+        lines = [f"目标带单员 {label}" if label != current else f"目标带单员 · 昵称暂不可用（{current}）"]
         if pending := store.get("trader.pending"):
             target = store.get("trader.pending_name", pending)
             paper, exchange, checking = store.trader_switch_blockers()
@@ -133,19 +159,19 @@ class Telegram:
     @staticmethod
     def request_trader(store, target):
         if target == store.active_trader():
-            return "这个组合已是当前带单员。"
+            return Telegram.trader_status(store)
         if target == store.get("trader.pending"):
             return Telegram.trader_status(store)
         feed = BinanceFeed(target)
         try:
-            name = feed.active_name()
+            name = feed.trader_name(require_active=True)
             end = now_ms()
             recent = feed.orders(end - TRADER_PREVIEW_MS, end)
             list(feed.closures())
         except ProbeError as error:
             return f"币安暂无法验证该组合或公开交易记录 · {error}"
         if not store.request_trader(target, name):
-            return "这个组合已是当前带单员。"
+            return Telegram.trader_status(store)
         queued = (f"已提交切换 · {name}（{target}）\n"
                   "旧仓位结清且委托核对完后会自动切换，再开始跟踪新成交。可用 /trader cancel 取消等待。")
         if not recent:

@@ -64,7 +64,8 @@ class ExchangeAccount:
 
     def _report_ai(self, store, signal, equity, decision, *, error=None, elapsed):
         if self.config.telegram:
-            message = format_ai_decision(self.mode, signal, equity, decision, error, elapsed)
+            message = format_ai_decision(self.mode, signal, equity, decision, error, elapsed,
+                                         trader=store.trader_label(signal.portfolio))
             with store.transaction():
                 store.queue_ai_decision(self.mode, signal, message)
 
@@ -93,7 +94,8 @@ class ExchangeAccount:
                 updated = store.db.execute("UPDATE jobs SET result=? WHERE account=? AND signal=? AND result IS NULL",
                                            ("model deadline exceeded", self.mode, signal.identity))
                 if self.config.telegram and updated.rowcount:
-                    message = format_ai_decision(self.mode, signal, equity, None, "模型响应超时", elapsed)
+                    message = format_ai_decision(self.mode, signal, equity, None, "模型响应超时", elapsed,
+                                                 trader=store.trader_label(signal.portfolio))
                     store.queue_ai_decision(self.mode, signal, message)
             if task.done():
                 self.ai_task = None

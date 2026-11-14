@@ -98,11 +98,11 @@ class BinanceFeed:
             clock.sleep(2.5)
             return read()
 
-    def active_name(self):
+    def trader_name(self, *, require_active=False):
         data = self._fetch("detail", None)
         if not isinstance(data, dict) or data.get("leadPortfolioId") != self.portfolio:
             raise ProbeError("币安响应和组合 ID 不匹配")
-        if data.get("status") != "ACTIVE":
+        if require_active and data.get("status") != "ACTIVE":
             raise ProbeError("该合约带单组合未在运行")
         name = data.get("nickname")
         return " ".join(name.split())[:100] if isinstance(name, str) and name.strip() else self.portfolio
