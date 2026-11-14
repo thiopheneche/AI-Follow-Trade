@@ -18,9 +18,8 @@ CREATE TABLE IF NOT EXISTS positions (
 CREATE TABLE IF NOT EXISTS signals (
     identity TEXT PRIMARY KEY, time INTEGER NOT NULL, symbol TEXT NOT NULL, leg TEXT NOT NULL,
     action TEXT NOT NULL, quantity TEXT NOT NULL, price TEXT NOT NULL, opened INTEGER NOT NULL,
-    first_seen INTEGER NOT NULL
+    first_seen INTEGER NOT NULL, portfolio TEXT
 );
-CREATE INDEX IF NOT EXISTS source_closes ON signals (symbol, leg, time) WHERE action = 'close';
 CREATE TABLE IF NOT EXISTS telegram_lead_fills (
     signal TEXT PRIMARY KEY REFERENCES signals(identity)
 );
@@ -82,6 +81,13 @@ class Store:
             if stored not in (None, portfolio):
                 raise ValueError("database belongs to another portfolio")
             self.put("portfolio", portfolio)
+            columns = self.db.execute("PRAGMA table_info(signals)").fetchall()
+            if not any(col["name"] == "portfolio" for col in columns):
+                self.db.execute("ALTER TABLE signals ADD COLUMN portfolio TEXT")
+                self.db.execute("UPDATE signals SET portfolio=?", (portfolio,))
+            self.db.execute("CREATE INDEX IF NOT EXISTS portfolio_closes ON signals (portfolio, symbol, leg, time) "
+                            "WHERE action = 'close'")
+            self.db.execute("DROP INDEX IF EXISTS source_closes")
             for account in accounts:
                 self.db.execute("INSERT OR IGNORE INTO accounts VALUES (?, ?)", (account, str(starting)))
 
@@ -103,27 +109,88 @@ class Store:
     def put(self, key, value):
         self.db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, str(value)))
 
+    def active_trader(self):
+        return self.get("trader.active") or self.get("portfolio")
+
+    def request_trader(self, portfolio, nickname):
+        with self.transaction():
+            if self.active_trader() == portfolio:
+                return False
+            self.put("trader.pending", portfolio)
+            self.put("trader.pending_name", nickname)
+            self.db.execute(
+                "UPDATE jobs SET result='trader switch pending' WHERE result IS NULL "
+                "AND signal IN (SELECT identity FROM signals WHERE action='increase') "
+                "AND NOT EXISTS (SELECT 1 FROM exchange_orders o WHERE o.mode=jobs.account AND o.signal=jobs.signal)"
+            )
+        return True
+
+    def cancel_trader_request(self):
+        with self.transaction():
+            return bool(self.db.execute(
+                "DELETE FROM settings WHERE key IN ('trader.pending', 'trader.pending_name')"
+            ).rowcount)
+
+    def trader_switch_blockers(self):
+        return self.db.execute(
+            "SELECT (SELECT COUNT(*) FROM positions), (SELECT COUNT(*) FROM exchange_positions), "
+            "(SELECT COUNT(*) FROM exchange_orders WHERE status='CHECKING')"
+        ).fetchone()
+
+    def activate_requested_trader(self):
+        with self.transaction():
+            portfolio = self.get("trader.pending")
+            if not portfolio or any(self.trader_switch_blockers()):
+                return None
+            nickname = self.get("trader.pending_name", portfolio)
+            cutoff = now_ms()
+            self.db.execute("UPDATE jobs SET result='trader switched' WHERE result IS NULL")
+            self.db.execute(
+                "DELETE FROM settings WHERE key IN ('trader.pending', 'trader.pending_name', 'orders.gap') "
+                "OR key LIKE 'event:%' OR key LIKE 'cooldown:%'"
+            )
+            self.put("trader.active", portfolio)
+            self.put("trader.active_name", nickname)
+            self.put("trader.cutoff", cutoff)
+            self.put("orders.last_end", cutoff)
+            self.put("feed_status", "等待新交易员成交轮询")
+            self.put("close_status", "等待新交易员全平记录")
+            self.put("trader.notification", f"已切换带单员 · {nickname}（{portfolio}）")
+            return portfolio
+
     def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False,
-               execution_modes=()):
+               execution_modes=(), source=None):
         with self.transaction():
             first_start = int(self.get("service.first_start", first_seen)) if notify_lead_fills else 0
             selected = self.get("execution.mode", "paper")
             selected_at = int(self.get("execution.selected_at", 0))
+            trader = self.active_trader()
+            if source is not None and trader != source:
+                return
+            cutoff = int(self.get("trader.cutoff", 0))
+            draining = self.get("trader.pending") is not None
+            namespace = trader != self.get("portfolio")
             for signal in signals:
-                result = self.db.execute("INSERT OR IGNORE INTO signals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (
-                    signal.identity, signal.time, signal.symbol, signal.leg, signal.action,
-                    str(signal.quantity), str(signal.price), signal.opened, first_seen,
+                if source is not None and signal.time < cutoff:
+                    continue
+                # Keep legacy IDs for the configured trader and local stop events.
+                identity = f"{trader}:{signal.identity}" if source is not None and namespace else signal.identity
+                result = self.db.execute(
+                    "INSERT OR IGNORE INTO signals(identity,time,symbol,leg,action,quantity,price,opened,first_seen,portfolio) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (
+                    identity, signal.time, signal.symbol, signal.leg, signal.action,
+                    str(signal.quantity), str(signal.price), signal.opened, first_seen, trader,
                 ))
                 if not result.rowcount:
                     continue
-                if not baseline:
+                if not baseline and (signal.action != "increase" or not draining):
                     self.db.executemany("INSERT INTO jobs VALUES (?, ?, NULL)",
-                                        ((account, signal.identity) for account in accounts))
+                                        ((account, identity) for account in accounts))
                     for mode in execution_modes:
                         if signal.action != "increase" or (mode == selected and signal.time >= selected_at):
-                            self.db.execute("INSERT INTO jobs VALUES (?, ?, NULL)", (mode, signal.identity))
+                            self.db.execute("INSERT INTO jobs VALUES (?, ?, NULL)", (mode, identity))
                 if notify_lead_fills and signal.action in ("increase", "decrease") and signal.time >= first_start:
-                    self.db.execute("INSERT INTO telegram_lead_fills VALUES (?)", (signal.identity,))
+                    self.db.execute("INSERT INTO telegram_lead_fills VALUES (?)", (identity,))
             for key, value in (progress or {}).items():
                 self.put(key, value)
 
@@ -133,7 +200,15 @@ class Store:
             "WHERE j.account = ? AND j.result IS NULL ORDER BY s.time, s.action = 'close', s.rowid", (account,),
         )
         return [(Signal(r["identity"], r["time"], r["symbol"], r["leg"], r["action"],
-                        Decimal(r["quantity"]), Decimal(r["price"]), r["opened"]), r["first_seen"]) for r in rows]
+                        Decimal(r["quantity"]), Decimal(r["price"]), r["opened"], r["portfolio"]),
+                 r["first_seen"]) for r in rows]
+
+    def has_source_close(self, signal):
+        return self.db.execute(
+            "SELECT 1 FROM signals WHERE portfolio=? AND symbol=? AND leg=? AND action='close' "
+            "AND opened<=? AND time>=? LIMIT 1",
+            (signal.portfolio or self.active_trader(), signal.symbol, signal.leg, signal.time, signal.time),
+        ).fetchone() is not None
 
     def done(self, account, signal, result):
         self.db.execute("UPDATE jobs SET result = ? WHERE account = ? AND signal = ?",

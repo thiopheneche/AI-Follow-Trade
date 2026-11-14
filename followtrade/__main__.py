@@ -50,7 +50,7 @@ class Runner:
         self.accounts = ("fixed", "ai") if config.ai else ("fixed",)
         self.execution_modes = tuple(account.mode for account in config.execution)
         self.engine = PaperEngine(store, config)
-        self.feed = BinanceFeed(config.portfolio)
+        self.feed = BinanceFeed(store.active_trader())
         self.market = BinanceMarket()
         self.model = Model(config.ai) if config.ai else None
         self.quote_data = {}
@@ -92,9 +92,9 @@ class Runner:
                                        else f"正常，最近一轮 {len(signals)} 条成交（含重复）")
             notify = self.config.telegram is not None and self.config.telegram.push_fills
             self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress,
-                              notify_lead_fills=notify, execution_modes=self.execution_modes)
+                              notify_lead_fills=notify, execution_modes=self.execution_modes, source=self.feed.portfolio)
             self.store.ingest(late, self.accounts, now_ms(), baseline=previous is None, notify_lead_fills=notify,
-                              execution_modes=self.execution_modes)
+                              execution_modes=self.execution_modes, source=self.feed.portfolio)
             self.next_poll = monotonic + self.config.poll_seconds
 
     def _read_closes(self, monotonic):
@@ -115,7 +115,7 @@ class Runner:
             # A paper position can't predate bootstrap for the selected account.
             baseline = int(self.store.get("service.first_start", seen))
             self.store.ingest((s for s in signals if s.time >= baseline), self.accounts, seen,
-                              execution_modes=self.execution_modes)
+                              execution_modes=self.execution_modes, source=self.feed.portfolio)
             self.update("close_status", "全平记录正常")
             self.next_close = monotonic + self.config.poll_seconds
 
@@ -190,6 +190,18 @@ class Runner:
                        if self.config.telegram else None)
             self.engine.process("ai", signal, self.quote_data, None, now, dead_reason=reason, ai_message=message)
 
+    def _switch_trader(self):
+        if self.access_stopped or self.order_task is not None or self.close_task is not None:
+            return
+        if not self.store.get("trader.pending"):
+            return
+        portfolio = self.store.activate_requested_trader()
+        if portfolio is not None:
+            self.feed = BinanceFeed(portfolio)
+            self.next_poll = self.next_close = self.next_head = 0
+            self.poll_failures = 0
+            logging.info("Switched lead portfolio to %s", portfolio)
+
     def tick(self, stop):
         monotonic = time.monotonic()
         self._read_orders(monotonic)
@@ -199,6 +211,7 @@ class Runner:
         self._expire_ai(now)
         self._ready_ai()
         self._jobs(now)
+        self._switch_trader()
         if self.quote_task is None and monotonic >= self.next_quote:
             self.quote_task = self.pool.submit(self.market.quotes)
         if not self.access_stopped and self.order_task is None and self.close_task is None:
@@ -275,7 +288,7 @@ def main():
                  for account in cfg.execution]
     for worker in execution:
         worker.start()
-    logging.info("Paper accounts %s for portfolio %s", ", ".join(accounts), cfg.portfolio)
+    logging.info("Paper accounts %s for portfolio %s", ", ".join(accounts), store.active_trader())
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
             runner = Runner(cfg, store, pool, model_pool)

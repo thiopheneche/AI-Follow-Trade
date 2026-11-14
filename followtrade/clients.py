@@ -3,6 +3,7 @@ from decimal import Decimal
 import hashlib
 import json
 import time as clock
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
@@ -58,6 +59,7 @@ class Signal:
     quantity: Decimal
     price: Decimal
     opened: int = 0
+    portfolio: Optional[str] = None
 
 
 def order_signal(row):
@@ -83,6 +85,15 @@ class BinanceFeed:
     def _fetch(self, route, body):
         return fetch(self.portfolio, "lead-portfolio/" + route, body,
                      observer=lambda *_args, **_fields: None)[0]
+
+    def active_name(self):
+        data = self._fetch("detail", None)
+        if not isinstance(data, dict) or data.get("leadPortfolioId") != self.portfolio:
+            raise ProbeError("币安响应和组合 ID 不匹配")
+        if data.get("status") != "ACTIVE":
+            raise ProbeError("该合约带单组合未在运行")
+        name = data.get("nickname")
+        return " ".join(name.split())[:100] if isinstance(name, str) and name.strip() else self.portfolio
 
     def orders(self, start, end):
         # Time slices avoid inclusive cursor overlaps at identical milliseconds.

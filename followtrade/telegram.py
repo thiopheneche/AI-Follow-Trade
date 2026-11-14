@@ -1,16 +1,20 @@
+from argparse import ArgumentTypeError
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
 import sqlite3
 import time
 
-from .clients import ServiceError, request_json
+from probe import ProbeError, portfolio_id
+
+from .clients import BinanceFeed, ServiceError, request_json
 from .execution import choose_mode, exchange_positions, format_exchange_order, mode_status
 from .store import Store, now_ms
 
 
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 PUSH_BATCH_SIZE = 12
+COMMAND_MAX_AGE_MS = 300_000
 MODE_COMMANDS = {"/paper": "paper", "/demo": "demo", "/live": "mainnet"}
 COMMAND_HELP = (
     "Bot 操作指令\n"
@@ -19,6 +23,7 @@ COMMAND_HELP = (
     "/positions  查看模拟持仓和 Bot 已核对的币安持仓\n"
     "/trades  查看最近的本地模拟成交\n"
     "/orders  查看最近的币安委托和成交回报\n"
+    "/trader  查看或切换目标带单员 · /trader <ID> · /trader cancel\n"
     "/mode  查看新开仓去向和已绑定的币安账户\n\n"
     "切换新开仓去向\n"
     "/paper  本地模拟\n"
@@ -44,6 +49,7 @@ def format_lead_fill(row):
                      for key in ("time", "first_seen"))
     return (
         f"[带单员成交] {row['symbol']} {direction}{action}\n"
+        f"组合 ID {row['portfolio']}\n"
         f"成交数量 {row['quantity']} · 均价 {row['price']}\n"
         f"订单更新 {updated} · 检测到 {seen}（UTC+8）"
     )
@@ -104,6 +110,76 @@ class Telegram:
                                  (row["account"], row["signal"]))
         return len(pending) == PUSH_BATCH_SIZE
 
+    def push_trader_notification(self, store):
+        message = store.get("trader.notification")
+        if message:
+            self.send(message)
+            with store.transaction():
+                store.db.execute("DELETE FROM settings WHERE key='trader.notification' AND value=?", (message,))
+
+    @staticmethod
+    def trader_status(store):
+        current = store.active_trader()
+        name = store.get("trader.active_name")
+        lines = [f"目标带单员 {name}（{current}）" if name and name != current else f"目标带单员 {current}"]
+        if pending := store.get("trader.pending"):
+            target = store.get("trader.pending_name", pending)
+            paper, exchange, checking = store.trader_switch_blockers()
+            lines.append(f"待切换至 {target}（{pending}）")
+            lines.append(f"旧仓位 · 本地 {paper} · 币安 {exchange} · 待核对委托 {checking}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def request_trader(store, target):
+        if target == store.active_trader():
+            return "这个组合已是当前带单员。"
+        if target == store.get("trader.pending"):
+            return Telegram.trader_status(store)
+        feed = BinanceFeed(target)
+        try:
+            name = feed.active_name()
+            recent = feed.head()
+            list(feed.closures())
+        except ProbeError as error:
+            return f"币安暂无法验证该组合或公开交易记录 · {error}"
+        if not store.request_trader(target, name):
+            return "这个组合已是当前带单员。"
+        queued = (f"已提交切换 · {name}（{target}）\n"
+                  "旧仓位结清且委托核对完后会自动切换，再开始跟踪新成交。可用 /trader cancel 取消等待。")
+        if not recent:
+            queued += "\n币安当前没有返回该组合的近期成交。"
+        return queued
+
+    def handle_message(self, store, accounts, execution, text, sent_at):
+        parts = text.split(maxsplit=1)
+        command = parts[0].split("@", 1)[0].lower() if parts else ""
+        argument = parts[1].strip() if len(parts) == 2 else ""
+        now = now_ms()
+        waiting = now <= int(store.get("telegram.trader_input_until", 0))
+        taking_input = waiting and bool(text.strip()) and not command.startswith("/")
+        if (command in MODE_COMMANDS or command == "/trader" or taking_input) and now - sent_at * 1000 > COMMAND_MAX_AGE_MS:
+            return "切换指令已过期，请重新发送。"
+        if command == "/trader" and not argument:
+            with store.transaction():
+                store.put("telegram.trader_input_until", now + COMMAND_MAX_AGE_MS)
+            return self.trader_status(store) + "\n请在 5 分钟内发送组合 ID 或带单详情链接。也可以直接发送 /trader <ID>。"
+        if command != "/trader" and not taking_input:
+            return self.reply(store, accounts, command, execution)
+        value = text.strip() if taking_input else argument
+        cancel = value.lower() == "cancel"
+        if not cancel:
+            try:
+                target = portfolio_id(value)
+            except ArgumentTypeError:
+                return "请输入币安合约带单组合 ID 或带单详情链接。"
+        with store.transaction():
+            store.db.execute("DELETE FROM settings WHERE key='telegram.trader_input_until'")
+        if cancel:
+            if store.cancel_trader_request():
+                return "已取消切换，当前带单员恢复接收新入场信号。"
+            return "没有待处理的切换。"
+        return self.request_trader(store, target)
+
     def serve(self, config, accounts, stop):
         store = Store(config.database, config.portfolio, config.starting, accounts)
         try:
@@ -115,6 +191,7 @@ class Telegram:
                     store.put("telegram.last_fill", last_fill)
             while not stop.is_set():
                 try:
+                    self.push_trader_notification(store)
                     has_backlog = False
                     if self.config.push_fills:
                         has_backlog = self.push_lead_fills(store, stop)
@@ -142,11 +219,7 @@ class Telegram:
                         chat = message.get("chat", {})
                         text = message.get("text")
                         if chat.get("type") == "private" and chat.get("id") == self.config.chat_id and isinstance(text, str):
-                            command = text.split(maxsplit=1)[0].split("@")[0] if text.strip() else ""
-                            if command in MODE_COMMANDS and now_ms() - message.get("date", 0) * 1000 > 300_000:
-                                self.send("切换指令已过期，请重新发送。")
-                            else:
-                                self.send(self.reply(store, accounts, command, config.execution))
+                            self.send(self.handle_message(store, accounts, config.execution, text, message.get("date", 0)))
                         cursor = update["update_id"] + 1
                         with store.transaction():
                             store.put("telegram.next_update", cursor)
@@ -160,6 +233,8 @@ class Telegram:
     def reply(store, accounts, command, execution=()):
         if command in ("/func", "/help", "/start"):
             return COMMAND_HELP
+        if command == "/trader":
+            return Telegram.trader_status(store)
         if command in MODE_COMMANDS:
             return choose_mode(store, execution, MODE_COMMANDS[command])
         if command == "/mode":
@@ -172,9 +247,12 @@ class Telegram:
             source = store.get("feed_status", "等待轮询")
             quotes = store.get("quote_status", "等待行情")
             close = store.get("close_status", "等待轮询")
-            lines = [mode_status(store, execution), f"信号源 {source}", f"全平 {close}", f"行情 {quotes}"]
-            signal = store.db.execute("SELECT time, first_seen FROM signals WHERE action='increase' "
-                                      "ORDER BY first_seen DESC, time DESC LIMIT 1").fetchone()
+            lines = [Telegram.trader_status(store), mode_status(store, execution),
+                     f"信号源 {source}", f"全平 {close}", f"行情 {quotes}"]
+            signal = store.db.execute("SELECT time, first_seen FROM signals "
+                                      "WHERE action='increase' AND portfolio=? AND time>=? "
+                                      "ORDER BY first_seen DESC, time DESC LIMIT 1",
+                                      (store.active_trader(), int(store.get("trader.cutoff", 0)))).fetchone()
             if signal:
                 age = (signal["first_seen"] - signal["time"]) // 1000
                 lines.append(f"最近入场信号首次观测时距订单更新 {age} 秒（含冷启动）")

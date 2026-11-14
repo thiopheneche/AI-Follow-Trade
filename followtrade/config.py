@@ -54,6 +54,15 @@ class Config:
     telegram: TelegramConfig = None
     execution: tuple = ()
 
+    def ai_trader_context(self, portfolio):
+        if portfolio in (None, self.portfolio):
+            return {}
+        return {
+            "lead_portfolio_id": portfolio,
+            "trader_profile": "暂无这个交易员的专属画像。根据已观察成交、报价和账户限额判断。"
+                              "带单员的实际仓位、保证金和设定杠杆未知。",
+        }
+
 
 def decimal_setting(raw, key, default, low, high):
     try:

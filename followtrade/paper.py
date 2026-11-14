@@ -138,10 +138,7 @@ class PaperEngine:
                 self.store.done(account, signal, "old or out-of-order event")
                 return
             if signal.action == "increase":
-                closed = db.execute(
-                    "SELECT 1 FROM signals WHERE symbol=? AND leg=? AND action='close' "
-                    "AND opened<=? AND time>=? LIMIT 1", (signal.symbol, signal.leg, signal.time, signal.time),
-                ).fetchone()
+                closed = self.store.has_source_close(signal)
                 if position:
                     observed = Decimal(position["observed_lead_qty"]) + signal.quantity
                     db.execute("UPDATE positions SET observed_lead_qty=? WHERE account=? AND symbol=? AND leg=?",
@@ -188,6 +185,7 @@ class PaperEngine:
         _, equity, gross, margin, details = self.store.snapshot("ai")
         pos = [row for row in details if row[0]["symbol"] == signal.symbol and row[0]["leg"] == signal.leg]
         return {
+            **self.config.ai_trader_context(signal.portfolio),
             "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
             "lead_execution_price": signal.price, "signal_age_seconds": (now - signal.time) // 1000,
             "bid": quote.bid, "ask": quote.ask, "account_equity_usdt": equity,

@@ -117,7 +117,9 @@ class ExchangeAccount:
         cfg = self.config
         now = now_ms()
         last_poll = int(store.get("orders.last_end", 0))
-        return (store.get("execution.mode") == self.mode and -5000 <= now - signal.time < cfg.max_age * 1000
+        return ((signal.portfolio is None or store.active_trader() == signal.portfolio)
+                and not store.get("trader.pending")
+                and store.get("execution.mode") == self.mode and -5000 <= now - signal.time < cfg.max_age * 1000
                 and signal.time >= int(store.get("execution.selected_at", 0)) and not store.get("orders.gap")
                 and now - last_poll <= cfg.poll_seconds * 2_000 + 15_000
                 and store.get("feed_status", "").startswith("正常"))
@@ -264,7 +266,8 @@ class ExchangeAccount:
         if daily or equity <= 0:
             return "daily loss guard"
         if self.account.strategy == "ai":
-            context = {"symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
+            context = {**cfg.ai_trader_context(signal.portfolio),
+                       "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
                        "lead_execution_price": signal.price, "signal_age_seconds": (now_ms() - signal.time) // 1000,
                        "bid": bid, "ask": ask, "account_equity_usdt": equity, "current_side_notional_usdt": notional,
                        "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": cfg.max_leverage,
@@ -294,6 +297,8 @@ class ExchangeAccount:
         if quantity < as_decimal(lot["minQty"]) or quantity * min(limit, bid) < floor:
             return "target reached or below Binance minimum"
         if not current:
+            if not self.entry_enabled(store, signal):
+                return "entry expired or route changed"
             result = self.client.signed("/fapi/v1/leverage", "POST", symbol=signal.symbol, leverage=leverage)
             if int(result["leverage"]) != leverage or quantity * risk_price > as_decimal(result["maxNotionalValue"]):
                 return "Binance leverage or notional limit"
@@ -359,11 +364,11 @@ class ExchangeAccount:
         for signal, _seen in pending:
             position = owned.get(signal.symbol)
             if signal.action == "increase":
-                closed = store.db.execute("SELECT 1 FROM signals WHERE symbol=? AND leg=? AND action='close' "
-                                          "AND opened<=? AND time>=? LIMIT 1", (signal.symbol, signal.leg, signal.time, signal.time)).fetchone()
+                closed = store.has_source_close(signal)
                 newest = store.db.execute("SELECT MAX(s.time) FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
-                                          "WHERE o.mode=? AND s.symbol=? AND o.action<>'increase' AND o.executed<>'0'",
-                                          (self.mode, signal.symbol)).fetchone()[0]
+                                          "WHERE o.mode=? AND s.portfolio=? AND s.symbol=? "
+                                          "AND o.action<>'increase' AND o.executed<>'0'",
+                                          (self.mode, signal.portfolio or store.active_trader(), signal.symbol)).fetchone()[0]
                 if not self.entry_enabled(store, signal):
                     result = "entry expired, feed unavailable or route changed"
                 elif closed or (newest is not None and signal.time <= newest):

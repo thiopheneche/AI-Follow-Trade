@@ -87,6 +87,24 @@ class ExecutionTest(TestCase):
         self.assertFalse(self.trader.owned(self.store))
         self.assertEqual(self.store.get("execution.mode"), "mainnet")
 
+    def test_trader_switch_waits_for_exchange_position_without_opening_again(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        entry = self.observe("demo-entry")
+        self.trader.tick(self.store)
+        self.set_position(self.orders[-1]["quantity"])
+
+        self.observe("pending-add")
+        self.store.request_trader("5231135285416047873", "目标交易员")
+        self.observe("later-add")
+        self.assertIsNone(self.store.activate_requested_trader())
+        self.observe("leader-close", action="close", opened=entry.time)
+        self.trader.tick(self.store)
+
+        self.assertEqual(len(self.orders), 2)
+        self.assertEqual(self.orders[-1]["reduceOnly"], "true")
+        self.assertEqual(self.store.activate_requested_trader(), "5231135285416047873")
+        self.assertEqual(self.store.get("execution.mode"), "demo")
+
     def test_timeout_queries_same_id_and_uses_actual_partial_fill(self):
         choose_mode(self.store, self.cfg.execution, "demo")
         self.observe("partial-entry")
