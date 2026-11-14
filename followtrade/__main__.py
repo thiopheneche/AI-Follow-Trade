@@ -47,12 +47,12 @@ class Runner:
     def __init__(self, config, store, pool, model_pool=None):
         self.config, self.store, self.pool = config, store, pool
         self.model_pool = model_pool if model_pool is not None else pool
-        self.accounts = ("fixed", "ai") if config.ai else ("fixed",)
+        self.accounts = config.paper_accounts
         self.execution_modes = tuple(account.mode for account in config.execution)
         self.engine = PaperEngine(store, config)
         self.feed = BinanceFeed(store.active_trader())
         self.market = BinanceMarket()
-        self.model = Model(config.ai) if config.ai else None
+        self.model = Model(config.ai) if "ai" in self.accounts else None
         self.quote_data = {}
         self.order_task = self.close_task = self.quote_task = self.ai_task = None
         self.ai_equity = Decimal(0)
@@ -240,8 +240,10 @@ class OrderTask:
 def main():
     parser = argparse.ArgumentParser(description="Binance USD-M paper copy-trading monitor")
     parser.add_argument("--config", type=Path, default=Path("config.json"))
-    parser.add_argument("--once", action="store_true", help="check the source and quotes without starting the bot")
-    parser.add_argument("--check-account", choices=("demo", "mainnet"), help="check signed, read-only Futures account access")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--once", action="store_true", help="check the source and quotes without starting the bot")
+    action.add_argument("--check-account", choices=("demo", "mainnet"), help="check signed, read-only Futures account access")
+    action.add_argument("--close-paper", choices=("fixed", "ai", "all"), help="close positions in the local paper ledger")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if args.check_account:
@@ -259,6 +261,19 @@ def main():
         cfg = load_config(args.config)
     except (OSError, ValueError, TypeError) as error:
         parser.error(str(error))
+    if args.close_paper:
+        accounts = ("fixed", "ai") if args.close_paper == "all" else (args.close_paper,)
+        store = Store(cfg.database, cfg.portfolio, cfg.starting, ())
+        try:
+            quotes = BinanceMarket().quotes() if any(store.positions(account) for account in accounts) else {}
+            closed = PaperEngine(store, cfg).close_paper(accounts, quotes, now_ms())
+            print(f"Local paper positions closed: {closed}")
+        except ServiceError as error:
+            print(error)
+            return 1
+        finally:
+            store.db.close()
+        return 0
     if args.once:
         failures = 0
         try:
@@ -276,7 +291,7 @@ def main():
         return int(failures > 0)
     stop = threading.Event()
     process_signal.signal(process_signal.SIGTERM, lambda *_: stop.set())
-    accounts = ("fixed", "ai") if cfg.ai else ("fixed",)
+    accounts = cfg.paper_accounts
     store = Store(cfg.database, cfg.portfolio, cfg.starting, accounts)
     with store.transaction():
         if store.get("service.first_start") is None:
@@ -285,7 +300,8 @@ def main():
     if cfg.telegram:
         telegram = threading.Thread(target=Telegram(cfg.telegram).serve, args=(cfg, accounts, stop), daemon=True)
         telegram.start()
-    model_pool = ThreadPoolExecutor(max_workers=1 + len(cfg.execution)) if cfg.ai else None
+    model_workers = int("ai" in accounts) + sum(account.strategy == "ai" for account in cfg.execution)
+    model_pool = ThreadPoolExecutor(max_workers=model_workers) if model_workers else None
     execution = [threading.Thread(target=ExchangeAccount(cfg, account, model_pool).serve, args=(stop,), daemon=True)
                  for account in cfg.execution]
     for worker in execution:

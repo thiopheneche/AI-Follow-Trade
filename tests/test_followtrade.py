@@ -98,6 +98,44 @@ class PaperTest(unittest.TestCase):
         self.assertEqual(self.store.positions("fixed"), [])
         self.assertLess(self.store.snapshot("fixed")[0], D(1000))
 
+    def test_disabling_local_ai_keeps_the_demo_ai_strategy(self):
+        cfg_path = self.cfg.database.with_suffix(".json")
+        cfg_path.write_text(json.dumps({
+            "database": str(self.cfg.database),
+            "ai": {"enabled": True, "local_paper_enabled": False, "base_url": "https://example.test/v1",
+                   "model": "test", "trader_profile": "profile"},
+            "execution": {"demo": {"strategy": "ai", "budget_usdt": "100"}},
+        }), encoding="utf-8")
+        with patch.dict("os.environ", {"FOLLOWTRADE_AI_KEY": "test", "FOLLOWTRADE_BINANCE_DEMO_KEY": "key",
+                                       "FOLLOWTRADE_BINANCE_DEMO_SECRET": "secret"}):
+            cfg = load_config(cfg_path)
+        runner = Runner(cfg, self.store, None)
+        self.assertEqual(runner.accounts, ("fixed",))
+        self.assertIsNone(runner.model)
+        self.assertIsNotNone(cfg.ai)
+        self.assertEqual(cfg.execution[0].strategy, "ai")
+
+    def test_close_paper_only_ai_books_exit_and_prevents_old_signals_reopening(self):
+        opening = observed("paper-entry")
+        self.entry(opening)
+        self.engine.process("ai", opening, self.quotes, (D(".15"), 3, "AI"), NOW)
+        self.store.ingest([observed("waiting")], ("ai",), NOW)
+        fixed_before = dict(self.store.positions("fixed")[0])
+        cash_before = self.store.snapshot("ai")[0]
+        close_quote = {SYMBOL: Quote(D(98), D("98.01"), NOW + 1000)}
+        with self.assertRaises(ServiceError):
+            self.engine.close_paper(("ai",), {}, NOW + 1000)
+        self.assertEqual(self.engine.close_paper(("ai",), close_quote, NOW + 1000), 1)
+        self.assertEqual(self.engine.close_paper(("ai",), {}, NOW + 1001), 0)
+        self.assertFalse(self.store.positions("ai"))
+        self.assertEqual(dict(self.store.positions("fixed")[0]), fixed_before)
+        self.assertGreater(self.store.snapshot("ai")[0], cash_before)
+        fill = self.store.db.execute("SELECT account,action,fee,reason FROM fills ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual((fill["account"], fill["action"], fill["reason"]), ("ai", "平仓", "手动平本地模拟仓位"))
+        self.assertGreater(D(fill["fee"]), 0)
+        self.store.ingest([observed("late", at=NOW), observed("fresh", at=NOW + 1002)], ("ai",), NOW + 1002)
+        self.assertEqual([sig.identity for sig, _ in self.store.pending("ai")], ["fresh"])
+
     def test_runner_runs_both_strategies_and_closes_without_ai(self):
         class ImmediatePool:
             def submit(self, function, *args):

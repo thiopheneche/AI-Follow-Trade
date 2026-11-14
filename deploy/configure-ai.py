@@ -32,7 +32,8 @@ def validate_model(base_url, model, key, timeout):
     Model(test).decide({"signal": None, "account_equity_usdt": "1000", "max_leverage": 3})
 
 
-def restart_and_check_ai():
+def restart_and_check_ai(local_paper_enabled):
+    accounts = "fixed, ai" if local_paper_enabled else "fixed"
     subprocess.run([*SYSTEMCTL, "restart", SERVICE], check=True)
     for _ in range(20):
         pid = subprocess.check_output([*SYSTEMCTL, "show", "-p", "MainPID", "--value", SERVICE], text=True).strip()
@@ -41,7 +42,7 @@ def restart_and_check_ai():
                 ["journalctl", "--user", "-u", SERVICE, f"_PID={pid}", "-n", "20", "--no-pager", "-o", "cat"],
                 text=True,
             )
-            if "Paper accounts fixed, ai for portfolio " in log:
+            if f"Paper accounts {accounts} for portfolio " in log:
                 subprocess.run([*SYSTEMCTL, "is-active", "--quiet", SERVICE], check=True)
                 return
         time.sleep(0.5)
@@ -81,7 +82,7 @@ def configure():
     try:
         write_private(env_path, environment_text(original_env, key))
         write_private(settings_path, json.dumps(settings, ensure_ascii=False, indent=2) + "\n")
-        restart_and_check_ai()
+        restart_and_check_ai(ai.get("local_paper_enabled", True))
     except (OSError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt):
         write_private(settings_path, original_settings)
         if original_env is None:
@@ -93,7 +94,7 @@ def configure():
             raise SystemExit("已恢复原配置，但服务重启失败，请检查服务状态。") from None
         raise SystemExit("AI 账户启动失败，已恢复原配置并重新启动服务。") from None
 
-    print("模型响应验证通过。固定与 AI 模拟账户均已启动，可在 Telegram 发送 /status 查看。")
+    print("模型响应验证通过，服务已启动。可在 Telegram 发送 /status 查看当前账户。")
 
 
 if __name__ == "__main__":

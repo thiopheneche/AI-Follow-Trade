@@ -34,7 +34,13 @@ python -m followtrade.trader 5075281354358777856 --history-page 1 --raw binance-
 
 在本机配置中设置 `ai.enabled=true`、`ai.base_url`、`ai.model` 和 `ai.trader_profile`。`base_url` 为支持 Chat Completions 的 HTTPS API 根路径，通常以 `/v1` 结尾。通过进程环境变量 `FOLLOWTRADE_AI_KEY` 提供模型密钥。
 
-对于本项目的 VPS 部署，从本机终端运行 `ssh -t USER@HOST 'python3 -B ~/ai-follow-trade/deploy/configure-ai.py'`。按提示填写服务商的 Base URL、模型 ID 和 API Key。密钥输入不回显。脚本先用虚构信号验证模型响应，再将密钥保存到仅服务用户可读的 `~/.config/ai-follow-trade/secrets.env`，启用 AI 账户并重启 `ai-follow-trade.service`。
+如果只在币安 Demo 或实盘使用 AI，可以将 `ai.local_paper_enabled` 设为 `false`，本地只运行固定策略。如果本地 AI 盘有仓位，先用以下命令结清。命令使用当前买卖价、模拟滑点和手续费记账，保留历史成交和盈亏。也可用 `--close-paper fixed` 或 `--close-paper all`。在运行同一账本的服务停止时执行，随后重启服务。
+
+```powershell
+python -m followtrade --config .\config.json --close-paper ai
+```
+
+对于本项目的 VPS 部署，从本机终端运行 `ssh -t USER@HOST 'python3 -B ~/ai-follow-trade/deploy/configure-ai.py'`。按提示填写服务商的 Base URL、模型 ID 和 API Key。密钥输入不回显。脚本先用虚构信号验证模型响应，再将密钥保存到仅服务用户可读的 `~/.config/ai-follow-trade/secrets.env`，启用模型并重启 `ai-follow-trade.service`。
 
 模型收到带单员画像、已观测成交、报价、执行账户权益、敞口和限制，输出跟单或跳过、目标名义仓位占比、建议杠杆和简短理由。`ai.timeout_seconds` 默认 60 秒，可设为 1–180 秒，入场仍受信号有效期 `max_signal_age_seconds` 限制。程序限制单合约与全账户的名义敞口、占用保证金和最大杠杆，已有同合约仓位使用原杠杆。模型错误或超时会跳过该次 AI 入场，固定策略和减平仓继续运行。绑定 Telegram 后，Bot 会发送 AI 建议、耗时或超时提示，成交状态以委托回报为准。
 

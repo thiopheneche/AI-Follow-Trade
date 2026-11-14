@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from .clients import ServiceError
 from .store import utc_day
 
 
@@ -116,6 +117,22 @@ class PaperEngine:
                         self._exit(position, quote, ONE, "每日亏损保护" if daily else "单仓止损", now)
                         self.store.put(f"cooldown:{account}:{position['symbol']}:{position['leg']}", now)
 
+    def close_paper(self, accounts, quotes, now):
+        with self.store.transaction():
+            positions = [position for account in accounts for position in self.store.positions(account)]
+            missing = sorted({row["symbol"] for row in positions if not current_quote(quotes, row["symbol"], now)})
+            if missing:
+                raise ServiceError(f"fresh quotes unavailable for {', '.join(missing)}")
+            for position in positions:
+                self._exit(position, quotes[position["symbol"]], ONE, "手动平本地模拟仓位", now)
+            for account in accounts:
+                self.store.put(f"paper.entry_after.{account}", now)
+                self.store.db.execute(
+                    "UPDATE jobs SET result='paper account closed manually' WHERE account=? AND result IS NULL",
+                    (account,),
+                )
+        return len(positions)
+
     def process(self, account, signal, quotes, decision, now, *, dead_reason=None, ai_message=None):
         db, cfg = self.store.db, self.config
         key = (account, signal.symbol, signal.leg)
@@ -125,6 +142,9 @@ class PaperEngine:
             if not job or job[0] is not None:
                 return
             if signal.time > now + 5000:
+                return
+            if signal.action == "increase" and signal.time <= int(self.store.get(f"paper.entry_after.{account}", 0)):
+                self.store.done(account, signal, "signal before manual paper close")
                 return
             if ai_message is not None:
                 self.store.queue_ai_decision(account, signal, ai_message)

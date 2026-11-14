@@ -18,6 +18,7 @@
   "position_stop_fraction": "0.05",
   "ai": {
     "enabled": false,
+    "local_paper_enabled": true,
     "base_url": "",
     "model": "",
     "timeout_seconds": 60,

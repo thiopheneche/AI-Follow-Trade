@@ -183,6 +183,7 @@ class Store:
             cutoff = int(self.get("trader.cutoff", 0))
             draining = self.get("trader.pending") is not None
             namespace = trader != self.get("portfolio")
+            paper_cutoffs = {account: int(self.get(f"paper.entry_after.{account}", 0)) for account in accounts}
             for signal in signals:
                 if source is not None and signal.time < cutoff:
                     continue
@@ -198,7 +199,8 @@ class Store:
                     continue
                 if not baseline and (signal.action != "increase" or not draining):
                     self.db.executemany("INSERT INTO jobs VALUES (?, ?, NULL)",
-                                        ((account, identity) for account in accounts))
+                                        ((account, identity) for account, after in paper_cutoffs.items()
+                                         if signal.action != "increase" or signal.time > after))
                     for mode in execution_modes:
                         if signal.action != "increase" or (mode == selected and signal.time >= selected_at):
                             self.db.execute("INSERT INTO jobs VALUES (?, ?, NULL)", (mode, identity))

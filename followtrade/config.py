@@ -53,6 +53,11 @@ class Config:
     ai: AIConfig = None
     telegram: TelegramConfig = None
     execution: tuple = ()
+    local_ai_enabled: bool = True
+
+    @property
+    def paper_accounts(self):
+        return ("fixed", "ai") if self.ai and self.local_ai_enabled else ("fixed",)
 
     def ai_trader_context(self, portfolio):
         if portfolio in (None, self.portfolio):
@@ -155,4 +160,5 @@ def load_config(path):
         decimal_setting(raw, "minimum_notional_usdt", "10", "0.01", "100000"),
         decimal_setting(raw, "daily_loss_fraction", "0.05", "0.0001", "1"),
         decimal_setting(raw, "position_stop_fraction", "0.05", "0.0001", "0.99"), ai, telegram, tuple(execution),
+        local_ai_enabled=enabled(ai_raw, "local_paper_enabled", True),
     )
