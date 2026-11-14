@@ -23,6 +23,12 @@ class AccessStopped(ProbeError):
     pass
 
 
+class BinanceBusinessError(ProbeError):
+    def __init__(self, path, code):
+        self.code = code
+        super().__init__(f"{path}: unexpected response (code {code})")
+
+
 class NoRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -92,7 +98,7 @@ def fetch(pid, path, body=None, *, observer=emit):
         raise ProbeError(f"{path}: invalid JSON") from error
     if not isinstance(payload, dict) or payload.get("code") != "000000" or payload.get("success") is not True:
         code = payload.get("code") if isinstance(payload, dict) else None
-        raise ProbeError(f"{path}: unexpected response (code {code})")
+        raise BinanceBusinessError(path, code)
     return payload.get("data"), observed_at
 
 

@@ -7,7 +7,7 @@ import time
 
 from probe import ProbeError, portfolio_id
 
-from .clients import MAX_ORDER_WINDOW_MS, BinanceFeed, ServiceError, request_json
+from .clients import BinanceFeed, ServiceError, request_json
 from .execution import choose_mode, exchange_positions, format_exchange_order, mode_status
 from .store import Store, now_ms
 
@@ -15,6 +15,7 @@ from .store import Store, now_ms
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 PUSH_BATCH_SIZE = 12
 COMMAND_MAX_AGE_MS = 300_000
+TRADER_PREVIEW_MS = 300_000
 MODE_COMMANDS = {"/paper": "paper", "/demo": "demo", "/live": "mainnet"}
 COMMAND_HELP = (
     "Bot 操作指令\n"
@@ -139,7 +140,7 @@ class Telegram:
         try:
             name = feed.active_name()
             end = now_ms()
-            recent = feed.orders(end - MAX_ORDER_WINDOW_MS, end)
+            recent = feed.orders(end - TRADER_PREVIEW_MS, end)
             list(feed.closures())
         except ProbeError as error:
             return f"币安暂无法验证该组合或公开交易记录 · {error}"

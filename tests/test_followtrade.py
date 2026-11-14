@@ -15,7 +15,7 @@ from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.paper import PaperEngine
 from followtrade.store import Store
 from followtrade.telegram import Telegram
-from probe import ProbeError
+from probe import AccessStopped, BinanceBusinessError, ProbeError
 
 
 D = Decimal
@@ -213,19 +213,22 @@ class ClientsTest(unittest.TestCase):
             with self.assertRaises(ProbeError):
                 feed.orders(9, 9)
 
-    def test_order_windows_split_at_binance_time_limit_without_gap(self):
+    def test_busy_order_source_retries_once_without_retrying_access_restrictions(self):
         feed = BinanceFeed("42")
+        busy = BinanceBusinessError("order-history", "11012005")
+        success = ({"total": 0, "list": []}, None)
+        with patch("followtrade.clients.fetch", side_effect=[busy, success]) as request, \
+                patch("followtrade.clients.clock.sleep") as sleep:
+            self.assertEqual(feed.orders(0, 345_000), [])
+            self.assertEqual(request.call_count, 2)
+            sleep.assert_called_once_with(2.5)
 
-        def fetch(_route, body):
-            left, right = body["startTime"], body["endTime"]
-            self.assertLess(right - left, 300_000)
-            rows = [self.order(t) for t in (0, 299_999, 300_000, 345_000) if left <= t <= right]
-            return {"list": rows, "total": len(rows)}
-
-        with patch.object(feed, "_fetch", side_effect=fetch) as request, patch("followtrade.clients.clock.sleep"):
-            orders = feed.orders(0, 345_000)
-        self.assertEqual([r.time for r in orders], [0, 299_999, 300_000, 345_000])
-        self.assertEqual(request.call_count, 2)
+        with patch("followtrade.clients.fetch", side_effect=AccessStopped("HTTP 429")) as request, \
+                patch("followtrade.clients.clock.sleep") as sleep:
+            with self.assertRaises(AccessStopped):
+                feed.orders(0, 345_000)
+            request.assert_called_once()
+            sleep.assert_not_called()
 
     def test_model_call_parses_structured_output_and_hides_key_from_prompt(self):
         model = Model(AIConfig("https://example.test/v1", "test", "placeholder-secret", 5, "先看流动性"))

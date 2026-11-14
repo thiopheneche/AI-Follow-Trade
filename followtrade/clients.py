@@ -7,10 +7,10 @@ from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from probe import OPENER, ProbeError, decimal, fetch, history_rows, parse_order
+from probe import BinanceBusinessError, OPENER, ProbeError, decimal, fetch, history_rows, parse_order
 
 
-MAX_ORDER_WINDOW_MS = 299_999  # Inclusive bounds, fewer than 300,000 milliseconds apart.
+BINANCE_BUSY = "11012005"
 
 
 class ServiceError(Exception):
@@ -86,8 +86,17 @@ class BinanceFeed:
         self.portfolio = portfolio
 
     def _fetch(self, route, body):
-        return fetch(self.portfolio, "lead-portfolio/" + route, body,
-                     observer=lambda *_args, **_fields: None)[0]
+        def read():
+            return fetch(self.portfolio, "lead-portfolio/" + route, body,
+                         observer=lambda *_args, **_fields: None)[0]
+
+        try:
+            return read()
+        except BinanceBusinessError as error:
+            if route != "order-history" or error.code != BINANCE_BUSY:
+                raise
+            clock.sleep(2.5)
+            return read()
 
     def active_name(self):
         data = self._fetch("detail", None)
@@ -99,12 +108,8 @@ class BinanceFeed:
         return " ".join(name.split())[:100] if isinstance(name, str) and name.strip() else self.portfolio
 
     def orders(self, start, end):
-        # The BAPI rejects longer windows. Keep inclusive slices disjoint.
-        intervals = [
-            (left, min(end, left + MAX_ORDER_WINDOW_MS))
-            for left in range(start, end + 1, MAX_ORDER_WINDOW_MS + 1)
-        ]
-        intervals.reverse()
+        # Time slices avoid inclusive cursor overlaps at identical milliseconds.
+        intervals = [(start, end)]
         signals = []
         for request_number in range(64):
             if not intervals:
