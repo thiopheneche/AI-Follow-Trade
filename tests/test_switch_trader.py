@@ -52,16 +52,17 @@ class SwitchTraderTest(TestCase):
         with patch("followtrade.telegram.BinanceFeed") as factory:
             feed = factory.return_value
             feed.active_name.return_value = "新交易员"
-            feed.head.side_effect = ProbeError("public feed unavailable")
+            feed.orders.side_effect = ProbeError("public feed unavailable")
             self.assertIn("币安暂无法验证", self.message(TARGET))
             self.assertIsNone(self.store.get("trader.pending"))
-            feed.head.side_effect = None
+            feed.orders.side_effect = None
+            feed.orders.return_value = []
             self.assertIn("已提交切换", self.message(f"/trader https://www.binance.com/en/copy-trading/lead-details/{TARGET}"))
             factory.assert_called_with(TARGET)
             self.assertIn(f"新交易员（{TARGET}）", self.message("/status"))
             self.assertIn("已取消", self.message("/trader cancel"))
             self.assertIsNone(self.store.get("trader.pending"))
-            feed.head.assert_called()
+            feed.orders.assert_called_with(NOW - 300_000, NOW)
             feed.closures.assert_called_once()
         self.assertIn("已过期", self.message(f"/trader {TARGET}", sent_at=NOW // 1000 - 301))
 

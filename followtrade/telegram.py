@@ -15,6 +15,7 @@ from .store import Store, now_ms
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 PUSH_BATCH_SIZE = 12
 COMMAND_MAX_AGE_MS = 300_000
+TRADER_PREVIEW_MS = 300_000
 MODE_COMMANDS = {"/paper": "paper", "/demo": "demo", "/live": "mainnet"}
 COMMAND_HELP = (
     "Bot 操作指令\n"
@@ -138,7 +139,8 @@ class Telegram:
         feed = BinanceFeed(target)
         try:
             name = feed.active_name()
-            recent = feed.head()
+            end = now_ms()
+            recent = feed.orders(end - TRADER_PREVIEW_MS, end)
             list(feed.closures())
         except ProbeError as error:
             return f"币安暂无法验证该组合或公开交易记录 · {error}"
@@ -147,7 +149,7 @@ class Telegram:
         queued = (f"已提交切换 · {name}（{target}）\n"
                   "旧仓位结清且委托核对完后会自动切换，再开始跟踪新成交。可用 /trader cancel 取消等待。")
         if not recent:
-            queued += "\n币安当前没有返回该组合的近期成交。"
+            queued += "\n币安未返回该组合最近 5 分钟的成交。"
         return queued
 
     def handle_message(self, store, accounts, execution, text, sent_at):
