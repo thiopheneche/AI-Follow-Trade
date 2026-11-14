@@ -3,7 +3,9 @@ from decimal import Decimal, DecimalException, ROUND_UP
 import hashlib
 import logging
 import sqlite3
+import time
 
+from .ai_decision import format_ai_decision
 from .binance import Futures, MODE_LABELS, as_decimal, rounded
 from .clients import BinanceAPIError, Model, ServiceError, Signal
 from .store import Store, now_ms, utc_day
@@ -13,6 +15,7 @@ ZERO = Decimal(0)
 ONE = Decimal(1)
 FINAL = {"FILLED", "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH", "REJECTED"}
 TRADFI_AGREEMENT_REQUIRED = -4411
+WAITING_FOR_MODEL = object()
 
 
 def mode_status(store, accounts):
@@ -51,10 +54,64 @@ def choose_mode(store, accounts, mode):
 
 
 class ExchangeAccount:
-    def __init__(self, config, account):
+    def __init__(self, config, account, model_pool=None):
         self.config, self.account = config, account
         self.mode = account.mode
         self.client = Futures(self.mode, account.key, account.secret)
+        self.model_pool = model_pool
+        self.ai_task = None
+        self.ai_result = None
+
+    def _report_ai(self, store, signal, equity, decision, *, error=None, elapsed):
+        if self.config.telegram:
+            message = format_ai_decision(self.mode, signal, equity, decision, error, elapsed)
+            with store.transaction():
+                store.queue_ai_decision(self.mode, signal, message)
+
+    def _model_decision(self, signal, context):
+        if self.ai_result is not None and self.ai_result[0] == signal.identity:
+            _, decision, error = self.ai_result
+            self.ai_result = None
+            if error is not None:
+                raise error
+            return decision
+        if self.ai_task is None and self.ai_result is None:
+            started = time.monotonic()
+            task = self.model_pool.submit(Model(self.config.ai).decide, context)
+            self.ai_task = signal, task, started, context["account_equity_usdt"]
+        return WAITING_FOR_MODEL
+
+    def _check_ai_deadline(self, store, pending):
+        if self.ai_result is not None and not any(s.identity == self.ai_result[0] for s, _ in pending):
+            self.ai_result = None
+        if self.ai_task is None:
+            return pending
+        signal, task, started, equity = self.ai_task
+        elapsed = time.monotonic() - started
+        if elapsed >= self.config.ai.timeout:
+            with store.transaction():
+                updated = store.db.execute("UPDATE jobs SET result=? WHERE account=? AND signal=? AND result IS NULL",
+                                           ("model deadline exceeded", self.mode, signal.identity))
+                if self.config.telegram and updated.rowcount:
+                    message = format_ai_decision(self.mode, signal, equity, None, "模型响应超时", elapsed)
+                    store.queue_ai_decision(self.mode, signal, message)
+            if task.done():
+                self.ai_task = None
+            return [(s, seen) for s, seen in pending if s.identity != signal.identity]
+        if task.done():
+            self.ai_task = None
+            still_pending = any(s.identity == signal.identity for s, _ in pending)
+            try:
+                decision = task.result()
+            except ServiceError as error:
+                self._report_ai(store, signal, equity, None, error=str(error), elapsed=elapsed)
+                if still_pending:
+                    self.ai_result = signal.identity, None, error
+            else:
+                self._report_ai(store, signal, equity, decision, elapsed=elapsed)
+                if still_pending:
+                    self.ai_result = signal.identity, decision, None
+        return pending
 
     def entry_enabled(self, store, signal):
         cfg = self.config
@@ -213,7 +270,10 @@ class ExchangeAccount:
                        "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": cfg.max_leverage,
                        "symbol_notional_fraction_limit": cfg.symbol_limit,
                        "gross_notional_fraction_limit": cfg.gross_limit, "margin_fraction_limit": cfg.margin_limit}
-            fraction, leverage, reason = Model(cfg.ai).decide(context)
+            decision = self._model_decision(signal, context)
+            if decision is WAITING_FOR_MODEL:
+                return WAITING_FOR_MODEL
+            fraction, leverage, reason = decision
             if not fraction:
                 return f"AI skip: {reason}"
         else:
@@ -243,6 +303,7 @@ class ExchangeAccount:
     def tick(self, store):
         self.reconcile(store)
         pending, owned = store.pending(self.mode), self.owned(store)
+        pending = self._check_ai_deadline(store, pending)
         if not pending and not owned:
             return
         if not owned:
@@ -323,10 +384,14 @@ class ExchangeAccount:
                 lead_qty = Decimal(position["lead_quantity"])
                 fraction = ONE if signal.action == "close" else min(Decimal(".95"), signal.quantity / lead_qty) if lead_qty else ZERO
                 result = self._exit(store, signal, position, self.client.filters(signal.symbol), fraction, 0)
+            if result is WAITING_FOR_MODEL:
+                continue
             if result is None:
                 return
             with store.transaction():
                 store.done(self.mode, signal, result)
+            if self.ai_result is not None and self.ai_result[0] == signal.identity:
+                self.ai_result = None
 
 
     def serve(self, stop):

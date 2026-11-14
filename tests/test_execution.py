@@ -1,3 +1,4 @@
+from concurrent.futures import Future
 from dataclasses import replace
 from decimal import Decimal
 import json
@@ -8,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from followtrade.binance import ExecutionAccount, Futures
 from followtrade.clients import BinanceAPIError, ServiceError, Signal
-from followtrade.config import load_config
+from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.execution import ExchangeAccount, choose_mode
 from followtrade.store import Store, now_ms
 from followtrade.telegram import Telegram
@@ -132,6 +133,40 @@ class ExecutionTest(TestCase):
         self.trader.tick(self.store)
         statuses = [row[0] for row in self.store.db.execute("SELECT status FROM exchange_orders ORDER BY rowid")]
         self.assertEqual(statuses, ["REJECTED", "FILLED"])
+        self.assertFalse(self.store.pending("demo"))
+
+    def test_waiting_for_model_does_not_block_exchange_close(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        entry_signal = self.observe("entry")
+        self.trader.tick(self.store)
+        self.set_position(self.orders[0]["quantity"])
+        ai = AIConfig("https://example.test/v1", "test", "secret", 60, "profile")
+        cfg = replace(self.cfg, ai=ai, telegram=TelegramConfig("test", 1, True))
+        account = replace(self.cfg.execution[0], strategy="ai")
+        pending_decision = Future()
+        pool = Mock()
+        pool.submit.return_value = pending_decision
+        worker = ExchangeAccount(cfg, account, pool)
+        worker.client = self.client
+        self.client.signed.side_effect = lambda route, method="GET", **params: (
+            [{"symbol": SYMBOL, "leverage": 3}] if route.endswith("/symbolConfig")
+            else self.exchange_request(route, method, **params)
+        )
+        self.observe("wait-for-ai")
+        worker.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+        self.observe("leader-close", action="close", opened=entry_signal.time)
+        worker.tick(self.store)
+        self.assertFalse(pending_decision.done())
+        self.assertEqual(self.orders[-1]["reduceOnly"], "true")
+        self.client.account.return_value = self.asset, []
+
+        pending_decision.set_result((D("0.25"), 3, "historical decision"))
+        worker.tick(self.store)
+        self.assertEqual(len(self.orders), 2)
+        decision = self.store.db.execute("SELECT account,message FROM telegram_ai_decisions").fetchone()
+        self.assertEqual(decision["account"], "demo")
+        self.assertIn("25.00%", decision["message"])
         self.assertFalse(self.store.pending("demo"))
 
     def test_confirmed_full_exit_retries_only_remaining_quantity(self):

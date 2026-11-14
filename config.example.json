@@ -20,7 +20,7 @@
     "enabled": false,
     "base_url": "",
     "model": "",
-    "timeout_seconds": 10,
+    "timeout_seconds": 60,
     "trader_profile": "熬鹰资本曾在同方向连续小单加仓或减仓。使用已经观察到的成交和当前可执行报价。带单员实际仓位、保证金和杠杆未知。"
   },
   "telegram": {

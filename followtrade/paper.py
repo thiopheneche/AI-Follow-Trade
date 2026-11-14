@@ -116,7 +116,7 @@ class PaperEngine:
                         self._exit(position, quote, ONE, "每日亏损保护" if daily else "单仓止损", now)
                         self.store.put(f"cooldown:{account}:{position['symbol']}:{position['leg']}", now)
 
-    def process(self, account, signal, quotes, decision, now, *, dead_reason=None):
+    def process(self, account, signal, quotes, decision, now, *, dead_reason=None, ai_message=None):
         db, cfg = self.store.db, self.config
         key = (account, signal.symbol, signal.leg)
         with self.store.transaction():
@@ -126,6 +126,8 @@ class PaperEngine:
                 return
             if signal.time > now + 5000:
                 return
+            if ai_message is not None:
+                self.store.queue_ai_decision(account, signal, ai_message)
             position = db.execute("SELECT * FROM positions WHERE account=? AND symbol=? AND leg=?", key).fetchone()
             quote = current_quote(quotes, signal.symbol, now)
             if quote:

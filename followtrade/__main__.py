@@ -10,6 +10,7 @@ import time
 
 from probe import AccessStopped, ProbeError
 
+from .ai_decision import format_ai_decision
 from .clients import BinanceFeed, BinanceMarket, Model, ServiceError, check_binance_account
 from .config import load_config
 from .execution import ExchangeAccount
@@ -43,8 +44,9 @@ def close_batch(feed):
 
 
 class Runner:
-    def __init__(self, config, store, pool):
+    def __init__(self, config, store, pool, model_pool=None):
         self.config, self.store, self.pool = config, store, pool
+        self.model_pool = model_pool if model_pool is not None else pool
         self.accounts = ("fixed", "ai") if config.ai else ("fixed",)
         self.execution_modes = tuple(account.mode for account in config.execution)
         self.engine = PaperEngine(store, config)
@@ -53,6 +55,7 @@ class Runner:
         self.model = Model(config.ai) if config.ai else None
         self.quote_data = {}
         self.order_task = self.close_task = self.quote_task = self.ai_task = None
+        self.ai_equity = Decimal(0)
         self.next_poll = self.next_quote = self.next_close = self.next_head = 0
         self.poll_failures = 0
         self.access_stopped = False
@@ -140,15 +143,22 @@ class Runner:
     def _ready_ai(self):
         if not self.ai_task or not self.ai_task[1].done():
             return
-        signal, task, _ = self.ai_task
+        signal, task, deadline = self.ai_task
         self.ai_task = None
+        message = None
+        now = now_ms()
+        elapsed = max(0, self.config.ai.timeout + (now - deadline) / 1000)
         try:
             decision = task.result()
         except ServiceError as error:
-            self.engine.process("ai", signal, self.quote_data, None, now_ms(), dead_reason=str(error))
+            if self.config.telegram:
+                message = format_ai_decision("ai", signal, 0, None, str(error), elapsed)
+            self.engine.process("ai", signal, self.quote_data, None, now, dead_reason=str(error), ai_message=message)
         else:
             reason = "feed unavailable" if self.store.get("orders.gap") or self.access_stopped or self.poll_failures else None
-            self.engine.process("ai", signal, self.quote_data, decision, now_ms(), dead_reason=reason)
+            if self.config.telegram:
+                message = format_ai_decision("ai", signal, self.ai_equity, decision, elapsed=elapsed)
+            self.engine.process("ai", signal, self.quote_data, decision, now, dead_reason=reason, ai_message=message)
 
     def _jobs(self, now):
         opening_disabled = self.store.get("orders.gap") or self.access_stopped or self.poll_failures
@@ -168,13 +178,17 @@ class Runner:
                     self.engine.process(account, signal, self.quote_data, decision, now)
                 elif self.ai_task is None:
                     context = self.engine.ai_context(signal, self.quote_data[signal.symbol], now)
-                    self.ai_task = signal, self.pool.submit(self.model.decide, context), now + self.config.ai.timeout * 1000
+                    self.ai_equity = context["account_equity_usdt"]
+                    self.ai_task = signal, self.model_pool.submit(self.model.decide, context), now + self.config.ai.timeout * 1000
 
     def _expire_ai(self, now):
         if self.ai_task and now >= self.ai_task[2]:
             signal, _task, _deadline = self.ai_task
             # Keep a single in-flight request until its transport finishes.
-            self.engine.process("ai", signal, self.quote_data, None, now, dead_reason="model deadline exceeded")
+            reason = "model deadline exceeded"
+            message = (format_ai_decision("ai", signal, 0, None, "模型响应超时", self.config.ai.timeout)
+                       if self.config.telegram else None)
+            self.engine.process("ai", signal, self.quote_data, None, now, dead_reason=reason, ai_message=message)
 
     def tick(self, stop):
         monotonic = time.monotonic()
@@ -256,14 +270,15 @@ def main():
     if cfg.telegram:
         telegram = threading.Thread(target=Telegram(cfg.telegram).serve, args=(cfg, accounts, stop), daemon=True)
         telegram.start()
-    execution = [threading.Thread(target=ExchangeAccount(cfg, account).serve, args=(stop,), daemon=True)
+    model_pool = ThreadPoolExecutor(max_workers=1 + len(cfg.execution)) if cfg.ai else None
+    execution = [threading.Thread(target=ExchangeAccount(cfg, account, model_pool).serve, args=(stop,), daemon=True)
                  for account in cfg.execution]
     for worker in execution:
         worker.start()
     logging.info("Paper accounts %s for portfolio %s", ", ".join(accounts), cfg.portfolio)
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
-            runner = Runner(cfg, store, pool)
+            runner = Runner(cfg, store, pool, model_pool)
             try:
                 while not stop.is_set():
                     runner.tick(stop)
@@ -275,6 +290,8 @@ def main():
             telegram.join(timeout=14)
         for worker in execution:
             worker.join(timeout=6)
+        if model_pool:
+            model_pool.shutdown(wait=False, cancel_futures=True)
         store.db.close()
     return 0
 

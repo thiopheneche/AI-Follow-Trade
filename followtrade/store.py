@@ -24,6 +24,10 @@ CREATE INDEX IF NOT EXISTS source_closes ON signals (symbol, leg, time) WHERE ac
 CREATE TABLE IF NOT EXISTS telegram_lead_fills (
     signal TEXT PRIMARY KEY REFERENCES signals(identity)
 );
+CREATE TABLE IF NOT EXISTS telegram_ai_decisions (
+    account TEXT NOT NULL, signal TEXT NOT NULL REFERENCES signals(identity), message TEXT NOT NULL,
+    PRIMARY KEY (account, signal)
+);
 CREATE TABLE IF NOT EXISTS jobs (
     account TEXT NOT NULL, signal TEXT NOT NULL, result TEXT,
     PRIMARY KEY (account, signal), FOREIGN KEY (signal) REFERENCES signals(identity)
@@ -134,6 +138,10 @@ class Store:
     def done(self, account, signal, result):
         self.db.execute("UPDATE jobs SET result = ? WHERE account = ? AND signal = ?",
                         (result, account, signal.identity))
+
+    def queue_ai_decision(self, account, signal, message):
+        self.db.execute("INSERT OR IGNORE INTO telegram_ai_decisions VALUES (?, ?, ?)",
+                        (account, signal.identity, message))
 
     def positions(self, account):
         return self.db.execute("SELECT * FROM positions WHERE account = ?", (account,)).fetchall()

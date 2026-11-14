@@ -74,7 +74,7 @@ def configure():
     if not re.fullmatch(r"[!-~]+", key):
         raise SystemExit("API Key 为空或含无效字符。")
     print("正在从 VPS 验证模型响应……", flush=True)
-    validate_model(base_url, model, key, ai.get("timeout_seconds", 10))
+    validate_model(base_url, model, key, ai.get("timeout_seconds", 60))
 
     original_env = env_path.read_text(encoding="utf-8") if env_path.exists() else None
     ai.update(enabled=True, base_url=base_url, model=model)

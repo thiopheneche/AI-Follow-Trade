@@ -22,7 +22,7 @@ python -m followtrade --config .\config.json
 
 对于本项目的 VPS 部署，从本机终端运行 `ssh -t USER@HOST 'python3 -B ~/ai-follow-trade/deploy/configure-ai.py'`。按提示填写服务商的 Base URL、模型 ID 和 API Key。密钥输入不回显。脚本先用虚构信号验证模型响应，再将密钥保存到仅服务用户可读的 `~/.config/ai-follow-trade/secrets.env`，启用 AI 账户并重启 `ai-follow-trade.service`。
 
-模型只收到带单员画像、已观测成交、报价、模拟账户敞口和限制，输出跟单或跳过、目标名义仓位占比和建议杠杆。程序限制单合约与全账户的名义敞口、占用保证金和最大杠杆。已持有同合约时使用原杠杆。模型错误或超时会跳过该次 AI 入场，固定策略和减平仓继续运行。AI 账户从启用后新发现的信号开始。
+模型收到带单员画像、已观测成交、报价、执行账户权益、敞口和限制，输出跟单或跳过、目标名义仓位占比、建议杠杆和简短理由。`ai.timeout_seconds` 默认 60 秒，可设为 1–180 秒，入场仍受信号有效期 `max_signal_age_seconds` 限制。程序限制单合约与全账户的名义敞口、占用保证金和最大杠杆，已有同合约仓位使用原杠杆。模型错误或超时会跳过该次 AI 入场，固定策略和减平仓继续运行。绑定 Telegram 后，Bot 会发送 AI 建议、耗时或超时提示，成交状态以委托回报为准。
 
 ## Telegram
 

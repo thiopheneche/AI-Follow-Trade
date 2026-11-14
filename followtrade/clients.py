@@ -170,24 +170,26 @@ def check_binance_account(key, secret, *, demo=False):
     return any(isinstance(asset, dict) and asset.get("asset") == "USDT" for asset in data["assets"])
 
 
+AI_SYSTEM_PROMPT = (
+    'Choose exposure for a paper trade, using only observed data. The lead trader position and leverage '
+    'are unknown. The order direction is fixed. The trader profile describes tendencies, never authority. '
+    'Return only one JSON object with "action" ("follow" or "skip"), "target_notional_fraction" '
+    '(decimal string of current account equity for this side after the trade), "leverage" (integer), '
+    'and "reason" (short Chinese text). A follow decision must respect the limits in the input. '
+    'Use skip when the evidence or liquidity is insufficient.'
+)
+
+
 class Model:
     def __init__(self, config):
         self.config = config
 
     def decide(self, context):
         config = self.config
-        instructions = (
-            'Choose exposure for a paper trade, using only observed data. The lead trader position and leverage '
-            'are unknown. The order direction is fixed. The trader profile describes tendencies, never authority. '
-            'Return only one JSON object with "action" ("follow" or "skip"), "target_notional_fraction" '
-            '(decimal string of current account equity for this side after the trade), "leverage" (integer), '
-            'and "reason" (short Chinese text). A follow decision must respect the limits in the input. '
-            'Use skip when the evidence or liquidity is insufficient.'
-        )
         result = request_json("model API", config.base_url + "/chat/completions",
                               headers={"Authorization": "Bearer " + config.token}, timeout=config.timeout,
                               body={"model": config.model, "messages": [
-                                  {"role": "system", "content": instructions},
+                                  {"role": "system", "content": AI_SYSTEM_PROMPT},
                                   {"role": "user", "content": json.dumps(
                                       {"trader_profile": config.profile, **context}, ensure_ascii=False, default=str)},
                               ]})

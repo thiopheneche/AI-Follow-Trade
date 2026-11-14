@@ -92,6 +92,18 @@ class Telegram:
                 store.db.execute("UPDATE exchange_orders SET notified=1 WHERE client_id=?", (row["client_id"],))
         return len(pending) == PUSH_BATCH_SIZE
 
+    def push_ai_decisions(self, store, stop):
+        pending = store.db.execute("SELECT account,signal,message FROM telegram_ai_decisions ORDER BY rowid LIMIT ?",
+                                   (PUSH_BATCH_SIZE,)).fetchall()
+        for row in pending:
+            if stop.is_set():
+                break
+            self.send(row["message"])
+            with store.transaction():
+                store.db.execute("DELETE FROM telegram_ai_decisions WHERE account=? AND signal=?",
+                                 (row["account"], row["signal"]))
+        return len(pending) == PUSH_BATCH_SIZE
+
     def serve(self, config, accounts, stop):
         store = Store(config.database, config.portfolio, config.starting, accounts)
         try:
@@ -106,6 +118,8 @@ class Telegram:
                     has_backlog = False
                     if self.config.push_fills:
                         has_backlog = self.push_lead_fills(store, stop)
+                    has_backlog = self.push_ai_decisions(store, stop) or has_backlog
+                    if self.config.push_fills:
                         has_backlog = self.push_exchange_orders(store, stop) or has_backlog
                         pending = store.db.execute("SELECT * FROM fills WHERE id>? ORDER BY id LIMIT ?",
                                                    (int(last_fill), PUSH_BATCH_SIZE)).fetchall()

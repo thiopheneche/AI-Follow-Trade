@@ -100,7 +100,7 @@ def load_config(path):
         if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise ConfigError("ai.base_url must be an HTTPS API base URL")
         ai = AIConfig(base_url.rstrip("/"), model, token,
-                      integer_setting(ai_raw, "timeout_seconds", 10, 1, 30), profile)
+                      integer_setting(ai_raw, "timeout_seconds", 60, 1, 180), profile)
     chat = tg_raw.get("chat_id")
     if chat is not None:
         token = os.getenv("FOLLOWTRADE_TELEGRAM_TOKEN", "")
