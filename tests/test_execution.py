@@ -7,7 +7,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from followtrade.binance import ExecutionAccount, Futures
-from followtrade.clients import ServiceError, Signal
+from followtrade.clients import BinanceAPIError, ServiceError, Signal
 from followtrade.config import load_config
 from followtrade.execution import ExchangeAccount, choose_mode
 from followtrade.store import Store, now_ms
@@ -109,6 +109,29 @@ class ExecutionTest(TestCase):
         self.client.signed.assert_called_once_with("/fapi/v1/order", symbol=SYMBOL,
                                                    origClientOrderId=self.orders[0]["newClientOrderId"])
         self.assertEqual(self.trader.owned(self.store)[SYMBOL]["quantity"], "0.125")
+        self.assertFalse(self.store.pending("demo"))
+
+    def test_unsigned_tradfi_agreement_rejects_order_without_blocking_next_entry(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.observe("agreement-required")
+        self.observe("next-entry")
+
+        def reject_first_order(route, method="GET", **params):
+            if route == "/fapi/v1/order":
+                self.assertEqual(method, "POST")
+                raise BinanceAPIError(400, -4411)
+            return self.exchange_request(route, method, **params)
+
+        self.client.signed.side_effect = reject_first_order
+        self.trader.tick(self.store)
+        self.assertFalse(self.trader.owned(self.store))
+        self.assertEqual([signal.identity for signal, _ in self.store.pending("demo")], ["next-entry"])
+        self.assertIn("TradFi", Telegram.reply(self.store, ("fixed",), "/orders", self.cfg.execution))
+
+        self.client.signed.side_effect = self.exchange_request
+        self.trader.tick(self.store)
+        statuses = [row[0] for row in self.store.db.execute("SELECT status FROM exchange_orders ORDER BY rowid")]
+        self.assertEqual(statuses, ["REJECTED", "FILLED"])
         self.assertFalse(self.store.pending("demo"))
 
     def test_confirmed_full_exit_retries_only_remaining_quantity(self):

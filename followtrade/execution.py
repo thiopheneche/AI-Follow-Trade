@@ -12,6 +12,7 @@ from .store import Store, now_ms, utc_day
 ZERO = Decimal(0)
 ONE = Decimal(1)
 FINAL = {"FILLED", "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH", "REJECTED"}
+TRADFI_AGREEMENT_REQUIRED = -4411
 
 
 def mode_status(store, accounts):
@@ -153,15 +154,19 @@ class ExchangeAccount:
         except BinanceAPIError as error:
             # A generic timeout, duplicate ID, or upstream failure needs an order lookup.
             if error.code not in {-1013, -1021, -1022, -1100, -1102, -1111, -1116, -1121, -2014, -2015,
-                                  -2019, -2022, -2027, -4003, -4004, -4005, -4014, -4023, -4061, -4164}:
+                                  -2019, -2022, -2027, -4003, -4004, -4005, -4014, -4023, -4061, -4164,
+                                  TRADFI_AGREEMENT_REQUIRED}:
                 raise
+            failure = str(error)
+            if error.code == TRADFI_AGREEMENT_REQUIRED:
+                failure += " · 请在下单账户接受币安 TradFi 永续合约协议"
             with store.transaction():
                 store.db.execute("UPDATE exchange_orders SET status='REJECTED',failure=? WHERE client_id=?",
-                                 (str(error), client_id))
+                                 (failure, client_id))
                 if action != "close":
-                    store.done(self.mode, signal, str(error))
+                    store.done(self.mode, signal, failure)
             if not entry:
-                raise ServiceError(f"退出委托被拒绝，稍后重试：{error}") from None
+                raise ServiceError(f"退出委托被拒绝，稍后重试。{failure}") from None
             return
         self._complete(store, {"client_id": client_id, "signal": signal.identity, "symbol": signal.symbol,
                                "leg": signal.leg, "lead_qty": signal.quantity, "signal_time": signal.time,
