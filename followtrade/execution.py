@@ -25,7 +25,7 @@ def mode_status(store, accounts):
         count = store.db.execute("SELECT COUNT(*) FROM exchange_positions WHERE mode=?", (account.mode,)).fetchone()[0]
         state = store.get(f"execution.health.{account.mode}", "等待检查")
         funds = "按子账户 USDT 权益" if account.budget is None else f"预算 {account.budget:f} USDT"
-        lines.append(f"{MODE_LABELS[account.mode]} · {account.strategy} · {funds} · {count} 个仓位 · {state}")
+        lines.append(f"{MODE_LABELS[account.mode]} · {account.strategy} · {funds} · Bot 记录 {count} 个仓位 · {state}")
     return "\n".join(lines)
 
 

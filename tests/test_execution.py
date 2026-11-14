@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from followtrade.binance import ExecutionAccount, Futures
+from followtrade.binance import BASE_URLS, ExecutionAccount, Futures
 from followtrade.clients import BinanceAPIError, ServiceError, Signal
 from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.execution import ExchangeAccount, choose_mode
@@ -86,6 +86,47 @@ class ExecutionTest(TestCase):
         self.assertEqual(close["quantity"], entry["quantity"])
         self.assertFalse(self.trader.owned(self.store))
         self.assertEqual(self.store.get("execution.mode"), "mainnet")
+
+    def test_status_reads_demo_and_mainnet_and_shows_position_matches(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.observe("demo-entry")
+        self.trader.tick(self.store)
+        qty = self.orders[-1]["quantity"]
+        rows = {
+            "demo": [{"symbol": SYMBOL, "positionAmt": qty, "positionSide": "BOTH",
+                      "entryPrice": "100", "markPrice": "101", "unRealizedProfit": "4.25", "marginAsset": "USDT"}],
+            "mainnet": [{"symbol": "BTCUSDT", "positionAmt": "-0.01", "positionSide": "BOTH"},
+                        {"symbol": "SOLUSDT", "positionAmt": "0", "positionSide": "BOTH"}],
+        }
+
+        def signed(client, route, method="GET"):
+            self.assertEqual((route, method), ("/fapi/v3/positionRisk", "GET"))
+            self.assertEqual(client.base_url, BASE_URLS[client.key.split("-")[0]])
+            return rows[client.key.split("-")[0]]
+
+        with patch.object(Futures, "signed", autospec=True, side_effect=signed) as query, \
+                patch("followtrade.telegram.BinanceFeed.trader_name", return_value="熬鹰资本"):
+            reply = Telegram.reply(self.store, ("fixed",), "/status", self.cfg.execution)
+            self.assertEqual(query.call_count, 2)
+        self.assertIn("【币安 Demo仓位】 币安返回 1 个持仓，Bot 记录 1 个", reply)
+        self.assertIn("标记价 101 · 浮盈亏 +4.2500 USDT · 与 Bot 记录一致", reply)
+        self.assertIn("【币安正式账户仓位】 币安返回 1 个持仓，Bot 记录 0 个", reply)
+        self.assertIn("BTCUSDT 空 数量 0.01 · 无 Bot 跟单记录", reply)
+        self.assertNotIn("SOLUSDT", reply)
+
+    def test_status_reports_read_error_empty_account_and_unbound_account(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.observe("demo-entry")
+        self.trader.tick(self.store)
+        with patch("followtrade.telegram.BinanceFeed.trader_name", return_value="熬鹰资本"), \
+                patch.object(Futures, "position_risk", side_effect=[BinanceAPIError(401, -2015), [], []]):
+            both = Telegram.reply(self.store, ("fixed",), "/status", self.cfg.execution)
+            demo_only = Telegram.reply(self.store, ("fixed",), "/status", self.cfg.execution[:1])
+        self.assertIn("【币安 Demo仓位】 查询失败", both)
+        self.assertIn("Bot 记录 1 个仓位", both)
+        self.assertIn("【币安正式账户仓位】 币安返回 0 个持仓，Bot 记录 0 个\n空仓", both)
+        self.assertIn(f"{SYMBOL} · Bot 有跟单记录，币安未返回持仓", demo_only)
+        self.assertIn("【币安正式账户仓位】 未绑定", demo_only)
 
     def test_trader_switch_waits_for_exchange_position_without_opening_again(self):
         choose_mode(self.store, self.cfg.execution, "demo")

@@ -190,6 +190,16 @@ class PaperTest(unittest.TestCase):
             bot.push_lead_fills(self.store, Event())
             send.assert_not_called()
 
+    def test_telegram_splits_long_replies_without_dropping_positions(self):
+        bot = Telegram(TelegramConfig("123:fake", 456, True))
+        lines = ["持仓明细 " + str(n) + " " + "数" * 110 for n in range(70)]
+        with patch.object(bot, "send") as send:
+            bot.send_reply("\n".join(lines))
+        messages = [call.args[0] for call in send.call_args_list]
+        self.assertGreater(len(messages), 1)
+        self.assertTrue(all(len(msg) <= 2000 for msg in messages))
+        self.assertEqual("\n".join(messages).splitlines(), lines)
+
 
 class ClientsTest(unittest.TestCase):
     @staticmethod

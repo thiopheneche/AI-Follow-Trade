@@ -68,10 +68,13 @@ class Futures:
         asset = next((row for row in account["assets"] if row["asset"] == "USDT"), None)
         if not asset:
             raise ServiceError("Binance account has no USDT asset record")
+        return asset, self.position_risk()
+
+    def position_risk(self):
         positions = self.signed("/fapi/v3/positionRisk")
         if not isinstance(positions, list):
             raise ServiceError("Binance returned an invalid position response")
-        return asset, positions
+        return positions
 
     def check_mode(self):
         mode = self.signed("/fapi/v1/accountConfig")

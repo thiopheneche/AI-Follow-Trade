@@ -7,6 +7,7 @@ import time
 
 from probe import ProbeError, portfolio_id
 
+from .binance import BASE_URLS, Futures, MODE_LABELS, as_decimal
 from .clients import BinanceFeed, ServiceError, request_json
 from .execution import choose_mode, exchange_positions, format_exchange_order, mode_status
 from .store import Store, now_ms
@@ -20,7 +21,7 @@ MODE_COMMANDS = {"/paper": "paper", "/demo": "demo", "/live": "mainnet"}
 COMMAND_HELP = (
     "Bot 操作指令\n"
     "/func · /help · /start  查看指令列表\n"
-    "/status  查看运行状态、行情和模拟账户权益\n"
+    "/status  查看运行状态、模拟账户权益和币安 Demo／实盘仓位\n"
     "/positions  查看模拟持仓和 Bot 已核对的币安持仓\n"
     "/trades  查看最近的本地模拟成交\n"
     "/orders  查看最近的币安委托和成交回报\n"
@@ -56,6 +57,64 @@ def format_lead_fill(row, trader):
     )
 
 
+def format_binance_position(row, quantity, side, tracked):
+    symbol = row["symbol"]
+    direction = "多" if side == "LONG" else "空"
+    record = tracked.get(symbol)
+    if record is None:
+        match = "无 Bot 跟单记录"
+    elif row["positionSide"] == "BOTH" and side == record["leg"] and abs(quantity) == as_decimal(record["quantity"]):
+        match = "与 Bot 记录一致"
+    else:
+        match = "与 Bot 记录有差异"
+    values = []
+    for key, label in (("entryPrice", "均价"), ("markPrice", "标记价")):
+        if row.get(key) is not None:
+            values.append(f"{label} {as_decimal(row[key]):.8g}")
+    if row.get("unRealizedProfit") is not None:
+        asset = row.get("marginAsset") or ""
+        values.append(f"浮盈亏 {as_decimal(row['unRealizedProfit']):+.4f} {asset}".rstrip())
+    return " · ".join([f"{symbol} {direction} 数量 {abs(quantity):.8g}", *values, match])
+
+
+def binance_position_status(store, accounts):
+    configured = {account.mode: account for account in accounts}
+    sections = []
+    for mode in BASE_URLS:
+        label = f"【{MODE_LABELS[mode]}仓位】"
+        account = configured.get(mode)
+        if account is None:
+            sections.append(f"{label} 未绑定")
+            continue
+        tracked = {row["symbol"]: row for row in store.db.execute(
+            "SELECT symbol, leg, quantity FROM exchange_positions WHERE mode=? ORDER BY symbol", (mode,),
+        )}
+        rows = []
+        actual_symbols = set()
+        try:
+            for position in Futures(mode, account.key, account.secret).position_risk():
+                quantity = as_decimal(position["positionAmt"])
+                if not quantity:
+                    continue
+                side = position["positionSide"]
+                if side == "BOTH":
+                    side = "LONG" if quantity > 0 else "SHORT"
+                symbol = position["symbol"]
+                if side not in ("LONG", "SHORT") or not isinstance(symbol, str) or not symbol:
+                    raise ServiceError("币安返回了无效的仓位数据")
+                rows.append(format_binance_position(position, quantity, side, tracked))
+                actual_symbols.add(symbol)
+        except (ServiceError, TypeError, KeyError) as error:
+            detail = str(error) if isinstance(error, ServiceError) else "币安返回了无效的仓位数据"
+            sections.append(f"{label} 查询失败 · {detail}\nBot 记录 {len(tracked)} 个仓位")
+            continue
+        lines = [f"{label} 币安返回 {len(rows)} 个持仓，Bot 记录 {len(tracked)} 个",
+                 *(sorted(rows) or ["空仓"])]
+        lines.extend(f"{symbol} · Bot 有跟单记录，币安未返回持仓" for symbol in sorted(tracked.keys() - actual_symbols))
+        sections.append("\n".join(lines))
+    return "\n\n".join(sections)
+
+
 class Telegram:
     def __init__(self, config):
         self.config = config
@@ -72,6 +131,17 @@ class Telegram:
         time.sleep(max(0, self.next_send - time.monotonic()))
         self.next_send = time.monotonic() + 1
         self.call("sendMessage", {"chat_id": self.config.chat_id, "text": message[:4000]})
+
+    def send_reply(self, message):
+        # Each Python character can take two UTF-16 units in Telegram.
+        limit = 2000
+        while len(message) > limit:
+            split = message.rfind("\n", 0, limit)
+            split = split if split > 0 else limit
+            self.send(message[:split])
+            message = message[split:].lstrip("\n")
+        if message:
+            self.send(message)
 
     def push_lead_fills(self, store, stop):
         pending = store.db.execute(
@@ -247,7 +317,9 @@ class Telegram:
                         chat = message.get("chat", {})
                         text = message.get("text")
                         if chat.get("type") == "private" and chat.get("id") == self.config.chat_id and isinstance(text, str):
-                            self.send(self.handle_message(store, accounts, config.execution, text, message.get("date", 0)))
+                            self.send_reply(
+                                self.handle_message(store, accounts, config.execution, text, message.get("date", 0))
+                            )
                         cursor = update["update_id"] + 1
                         with store.transaction():
                             store.put("telegram.next_update", cursor)
@@ -290,6 +362,7 @@ class Telegram:
                     stale = any(now_ms() - p[4] > 30_000 for p in positions)
                     suffix = "（部分报价过期）" if stale else ""
                     lines.append(f"{account} 权益 {equity:.2f} | 敞口 {gross:.2f} | 保证金估计 {margin:.2f} USDT{suffix}")
+            lines.extend(["", binance_position_status(store, execution)])
             return "\n".join(lines)
         if command == "/positions":
             lines = ["模拟持仓"]
