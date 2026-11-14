@@ -108,7 +108,7 @@ def decimal(value):
     return number
 
 
-def parse_positions(rows):
+def parse_positions(rows, *, optional_number=decimal):
     if not isinstance(rows, list) or not rows:
         raise ProbeError("positions missing or empty, visibility and flat state cannot be inferred")
     positions = {}
@@ -133,12 +133,12 @@ def parse_positions(rows):
             "leg": leg,
             "direction": ("LONG" if quantity > 0 else "SHORT") if leg == "BOTH" and quantity else leg,
             "quantity": quantity if leg == "BOTH" else abs(quantity),
-            "notional_value": decimal(row.get("notionalValue")),
-            "entry_price": decimal(row.get("entryPrice")),
-            "mark_price": decimal(row.get("markPrice")),
-            "configured_leverage": decimal(row.get("leverage")),
-            "isolated_wallet": decimal(row.get("isolatedWallet")),
-            "initial_margin": decimal(row.get("positionInitialMargin")),
+            "notional_value": optional_number(row.get("notionalValue")),
+            "entry_price": optional_number(row.get("entryPrice")),
+            "mark_price": optional_number(row.get("markPrice")),
+            "configured_leverage": optional_number(row.get("leverage")),
+            "isolated_wallet": optional_number(row.get("isolatedWallet")),
+            "initial_margin": optional_number(row.get("positionInitialMargin")),
             "margin_mode": {True: "ISOLATED", False: "CROSS"}.get(isolated) if type(isolated) is bool else None,
         }
     return positions

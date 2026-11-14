@@ -16,6 +16,20 @@ python -m followtrade --config .\config.json
 
 订单首次观测时间、跳过原因和两套模拟成交保存在 SQLite。入场使用买卖一档加设定滑点，按订单更新时间判断 5 分钟新鲜度，超时则跳过。实际发布延迟和一档可成交量需要另行验证。全平以带单员的仓位历史核对，减仓比例按可见成交估计。止损与日亏保护按本机可读报价轮询执行。模拟包含显式手续费及滑点，资金费、历史合约过滤器、盘口深度、逐仓强平和真实成交另有差异。
 
+## 查询带单员保证金和杠杆
+
+```powershell
+python -m followtrade.trader 5075281354358777856 --history-page 1 --raw binance-response.json
+```
+
+`followtrade.trader` 提供 `get_trader_margin_balance(portfolio_id)` 和 `get_trader_position_leverage(portfolio_id)`。第二个函数同时返回保证金和公开的未平仓仓位，传入 `history_page=1` 可追加查询历史。也可以传入币安带单分享链接。查询使用公开 BAPI，无需 API Key。命令行用十进制字符串保留金额精度，并在 `metadata` 中列出原始字段路径、响应观测时间和公式输入。
+
+- `GET lead-portfolio/detail` 的 `data.marginBalance` 是带单保证金余额。熬鹰资本返回的组合币种 `data.initInvestAsset` 为 USDT。AUM 有独立字段。余额定义见[币安组合表现指标](https://www.binance.com/en/support/faq/detail/54aa6d3b43bc4f6eb4a3a6e3aea40acd)。
+- `GET lead-data/positions` 在组合公开持仓时提供 `data[].leverage` 和布尔型 `data[].isolated`。隐藏持仓返回 `positions: null`，公开组合返回空数组时标为 `empty_unconfirmed`。
+- `POST lead-portfolio/position-history` 在 `data.list[]` 中提供 `leverage` 和 `isolated`（`Cross` 或 `Isolated`）。杠杆采样时点未知，历史记录没有用于与当前持仓可靠关联的公共键。历史值只出现在历史查询结果中。
+
+名义敞口和估算初始保证金针对 USDT 线性仓位计算。敞口比例与账户有效杠杆要求正余额、相关响应的观测年龄不超过 60 秒，且相差不超过 15 秒。已知 HTTP `Age` 时计入缓存年龄。币安未在这两个接口提供账户权益和持仓快照的生成时间，各项计算基于最近观测结果。估算初始保证金按名义敞口除以杠杆计算，采用独立字段表示。真实请求见[脱敏响应](evidence/binance-copy-trading-2026-11-14.json)。
+
 ## 启用 AI
 
 在本机配置中设置 `ai.enabled=true`、`ai.base_url`、`ai.model` 和 `ai.trader_profile`。`base_url` 为支持 Chat Completions 的 HTTPS API 根路径，通常以 `/v1` 结尾。通过进程环境变量 `FOLLOWTRADE_AI_KEY` 提供模型密钥。
