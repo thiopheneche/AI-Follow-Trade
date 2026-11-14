@@ -213,6 +213,20 @@ class ClientsTest(unittest.TestCase):
             with self.assertRaises(ProbeError):
                 feed.orders(9, 9)
 
+    def test_order_windows_split_at_binance_time_limit_without_gap(self):
+        feed = BinanceFeed("42")
+
+        def fetch(_route, body):
+            left, right = body["startTime"], body["endTime"]
+            self.assertLess(right - left, 300_000)
+            rows = [self.order(t) for t in (0, 299_999, 300_000, 345_000) if left <= t <= right]
+            return {"list": rows, "total": len(rows)}
+
+        with patch.object(feed, "_fetch", side_effect=fetch) as request, patch("followtrade.clients.clock.sleep"):
+            orders = feed.orders(0, 345_000)
+        self.assertEqual([r.time for r in orders], [0, 299_999, 300_000, 345_000])
+        self.assertEqual(request.call_count, 2)
+
     def test_model_call_parses_structured_output_and_hides_key_from_prompt(self):
         model = Model(AIConfig("https://example.test/v1", "test", "placeholder-secret", 5, "先看流动性"))
         result = {"choices": [{"message": {"content": json.dumps(

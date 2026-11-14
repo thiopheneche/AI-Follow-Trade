@@ -62,7 +62,7 @@ class SwitchTraderTest(TestCase):
             self.assertIn(f"新交易员（{TARGET}）", self.message("/status"))
             self.assertIn("已取消", self.message("/trader cancel"))
             self.assertIsNone(self.store.get("trader.pending"))
-            feed.orders.assert_called_with(NOW - 300_000, NOW)
+            feed.orders.assert_called_with(NOW - 299_999, NOW)
             feed.closures.assert_called_once()
         self.assertIn("已过期", self.message(f"/trader {TARGET}", sent_at=NOW // 1000 - 301))
 

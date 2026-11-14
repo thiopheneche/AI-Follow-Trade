@@ -10,6 +10,9 @@ from urllib.request import Request
 from probe import OPENER, ProbeError, decimal, fetch, history_rows, parse_order
 
 
+MAX_ORDER_WINDOW_MS = 299_999  # Inclusive bounds, fewer than 300,000 milliseconds apart.
+
+
 class ServiceError(Exception):
     pass
 
@@ -96,8 +99,12 @@ class BinanceFeed:
         return " ".join(name.split())[:100] if isinstance(name, str) and name.strip() else self.portfolio
 
     def orders(self, start, end):
-        # Time slices avoid inclusive cursor overlaps at identical milliseconds.
-        intervals = [(start, end)]
+        # The BAPI rejects longer windows. Keep inclusive slices disjoint.
+        intervals = [
+            (left, min(end, left + MAX_ORDER_WINDOW_MS))
+            for left in range(start, end + 1, MAX_ORDER_WINDOW_MS + 1)
+        ]
+        intervals.reverse()
         signals = []
         for request_number in range(64):
             if not intervals:
