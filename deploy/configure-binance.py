@@ -94,6 +94,9 @@ def configure(mode):
     if strategy not in ("ai", "fixed") or (strategy == "ai" and default != "ai"):
         raise SystemExit("请填写已启用的 ai 或 fixed 策略。")
     route_config = {"strategy": strategy}
+    existing = settings.get("execution", {}).get(mode, {})
+    if "max_entry_deviation_fraction" in existing:
+        route_config["max_entry_deviation_fraction"] = existing["max_entry_deviation_fraction"]
     if mode == "demo":
         try:
             budget = Decimal(input("Demo 策略预算（USDT）: ").strip())

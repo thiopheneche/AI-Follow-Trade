@@ -38,6 +38,7 @@ class ExecutionAccount:
     secret: str
     budget: Optional[Decimal]
     strategy: str
+    entry_deviation: Optional[Decimal] = None
 
 
 class Futures:

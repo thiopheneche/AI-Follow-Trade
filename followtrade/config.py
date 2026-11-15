@@ -131,6 +131,7 @@ def load_config(path):
     if fixed > ceiling:
         raise ConfigError("fixed_leverage exceeds max_leverage")
     slip = decimal_setting(raw, "extra_slippage_fraction", "0.0005", "0", "0.1")
+    deviation = decimal_setting(raw, "max_entry_deviation_fraction", "0.005", "0", "0.25")
     execution = []
     routes = raw.get("execution", {})
     if not isinstance(routes, dict) or routes.keys() - BASE_URLS.keys():
@@ -146,7 +147,8 @@ def load_config(path):
         if strategy not in ("fixed", "ai") or (strategy == "ai" and ai is None):
             raise ConfigError(f"invalid {mode} execution strategy")
         budget = decimal_setting(route, "budget_usdt", "0", "1", "10000000") if mode == "demo" else None
-        execution.append(ExecutionAccount(mode, key, secret, budget, strategy))
+        entry_deviation = decimal_setting(route, "max_entry_deviation_fraction", deviation, "0", "0.25")
+        execution.append(ExecutionAccount(mode, key, secret, budget, strategy, entry_deviation))
     return Config(
         portfolio, database, decimal_setting(raw, "starting_usdt", "1000", "1", "10000000"),
         integer_setting(raw, "poll_seconds", 30, 5, 300),
@@ -155,7 +157,7 @@ def load_config(path):
         decimal_setting(raw, "symbol_notional_fraction", "0.45", "0.0001", "20"),
         decimal_setting(raw, "gross_notional_fraction", "1.20", "0.0001", "20"),
         decimal_setting(raw, "margin_fraction", "0.40", "0.0001", "1"),
-        decimal_setting(raw, "max_entry_deviation_fraction", "0.005", "0", "0.25"),
+        deviation,
         decimal_setting(raw, "estimated_taker_fee_fraction", "0.0005", "0", "0.05"), slip,
         decimal_setting(raw, "minimum_notional_usdt", "10", "0.01", "100000"),
         decimal_setting(raw, "daily_loss_fraction", "0.05", "0.0001", "1"),

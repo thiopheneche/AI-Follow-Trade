@@ -37,6 +37,8 @@
 - **币安账户** · 在已配置 `ai-follow-trade.service` 的 VPS 上运行 `python3 deploy/configure-binance.py demo` 或 `python3 deploy/configure-binance.py mainnet`，录入并验证对应的 HMAC 凭据。实盘使用真实资金。
 - **只读查询** · 运行 `python -m followtrade.trader PORTFOLIO_ID --history-page 1` 查看带单账户保证金、公开持仓和历史仓位。
 
+`max_entry_deviation_fraction` 设置相对带单成交价的不利入场价差上限。可在 `execution.demo` 或 `execution.mainnet` 下单独设置。用 `/mode` 查看各币安账户的生效值。
+
 ## 测试
 
 ```sh

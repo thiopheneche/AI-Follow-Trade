@@ -26,7 +26,8 @@ def mode_status(store, accounts):
         count = store.db.execute("SELECT COUNT(*) FROM exchange_positions WHERE mode=?", (account.mode,)).fetchone()[0]
         state = store.get(f"execution.health.{account.mode}", "等待检查")
         funds = "按子账户 USDT 权益" if account.budget is None else f"预算 {account.budget:f} USDT"
-        lines.append(f"{MODE_LABELS[account.mode]} · {account.strategy} · {funds} · Bot 记录 {count} 个仓位 · {state}")
+        deviation = f" · 入场价差上限 {account.entry_deviation:.2%}" if account.entry_deviation is not None else ""
+        lines.append(f"{MODE_LABELS[account.mode]} · {account.strategy} · {funds}{deviation} · Bot 记录 {count} 个仓位 · {state}")
     return "\n".join(lines)
 
 
@@ -270,7 +271,10 @@ class ExchangeAccount:
         is_long = signal.leg == "LONG"
         rules = self.client.filters(signal.symbol)
         tick = as_decimal(rules["PRICE_FILTER"]["tickSize"])
-        limit = signal.price * (ONE + cfg.deviation if is_long else ONE - cfg.deviation)
+        deviation = self.account.entry_deviation
+        if deviation is None:
+            deviation = cfg.deviation
+        limit = signal.price * (ONE + deviation if is_long else ONE - deviation)
         limit = rounded(limit, tick) if is_long else rounded(limit, tick, ROUND_UP)
         if not limit or (is_long and ask > limit) or (not is_long and bid < limit):
             return (f"价格超出入场范围 · 带单成交价 {signal.price:f} · "

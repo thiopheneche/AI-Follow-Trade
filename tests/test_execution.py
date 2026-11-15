@@ -119,6 +119,19 @@ class ExecutionTest(TestCase):
         self.assertIn("未下单", reply)
         self.assertIn("价格超出入场范围 · 带单成交价 100 · 可成交报价 101.01 · 限价 100.50", reply)
 
+    def test_demo_deviation_override_accepts_prices_within_its_own_limit(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.trader.account = replace(self.trader.account, entry_deviation=D(".0075"))
+        self.client.quote.return_value = (D("100.59"), D("100.60"))
+        self.observe("inside-demo-limit")
+        self.trader.tick(self.store)
+        self.assertEqual(self.orders[-1]["price"], "100.75")
+        self.set_position(self.orders[-1]["quantity"])
+        self.client.quote.return_value = (D("100.75"), D("100.76"))
+        self.observe("outside-demo-limit")
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+
     def test_status_reads_demo_and_mainnet_and_shows_position_matches(self):
         choose_mode(self.store, self.cfg.execution, "demo")
         self.observe("demo-entry")

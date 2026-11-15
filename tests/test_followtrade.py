@@ -115,16 +115,21 @@ class PaperTest(unittest.TestCase):
             "database": str(self.cfg.database),
             "ai": {"enabled": True, "local_paper_enabled": False, "base_url": "https://example.test/v1",
                    "model": "test", "trader_profile": "profile"},
-            "execution": {"demo": {"strategy": "ai", "budget_usdt": "100"}},
+            "execution": {"demo": {"strategy": "ai", "budget_usdt": "100", "max_entry_deviation_fraction": "0.0075"},
+                          "mainnet": {"strategy": "ai"}},
         }), encoding="utf-8")
         with patch.dict("os.environ", {"FOLLOWTRADE_AI_KEY": "test", "FOLLOWTRADE_BINANCE_DEMO_KEY": "key",
-                                       "FOLLOWTRADE_BINANCE_DEMO_SECRET": "secret"}):
+                                       "FOLLOWTRADE_BINANCE_DEMO_SECRET": "secret", "FOLLOWTRADE_BINANCE_MAINNET_KEY": "key",
+                                       "FOLLOWTRADE_BINANCE_MAINNET_SECRET": "secret"}):
             cfg = load_config(cfg_path)
         runner = Runner(cfg, self.store, None)
         self.assertEqual(runner.accounts, ("fixed",))
         self.assertIsNone(runner.model)
         self.assertIsNotNone(cfg.ai)
         self.assertEqual(cfg.execution[0].strategy, "ai")
+        self.assertEqual(cfg.deviation, D(".005"))
+        self.assertEqual({a.mode: a.entry_deviation for a in cfg.execution},
+                         {"demo": D(".0075"), "mainnet": D(".005")})
 
     def test_close_paper_only_ai_books_exit_and_prevents_old_signals_reopening(self):
         opening = observed("paper-entry")
