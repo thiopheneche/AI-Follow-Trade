@@ -87,6 +87,38 @@ class ExecutionTest(TestCase):
         self.assertFalse(self.trader.owned(self.store))
         self.assertEqual(self.store.get("execution.mode"), "mainnet")
 
+    def test_demo_add_uses_incremental_ai_size_and_keeps_existing_leverage(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.observe("initial")
+        self.trader.tick(self.store)
+        initial = self.orders[-1]["quantity"]
+        self.set_position(initial)
+        cfg = replace(self.cfg, ai=AIConfig("https://example.test/v1", "test", "test", 60, "profile"))
+        worker = ExchangeAccount(cfg, replace(cfg.execution[0], strategy="ai"), Mock())
+        worker.client = self.client
+        self.client.signed.side_effect = lambda route, method="GET", **params: (
+            [{"symbol": SYMBOL, "leverage": 3}] if route.endswith("/symbolConfig") else
+            self.exchange_request(route, method, **params)
+        )
+        signal = self.observe("add")
+        worker.ai_result = signal.identity, (D(".10"), 8, "提高目标敞口"), None
+        worker.tick(self.store)
+        self.assertEqual(len(self.orders), 2)
+        self.assertEqual(D(self.orders[-1]["quantity"]), D(".995"))
+        self.assertEqual(D(worker.owned(self.store)[SYMBOL]["quantity"]), D(initial) + D(".995"))
+        order = self.store.db.execute("SELECT leverage,status FROM exchange_orders WHERE signal=?", (signal.identity,)).fetchone()
+        self.assertEqual((order["leverage"], order["status"]), (3, "FILLED"))
+
+    def test_demo_price_guard_reports_skip_and_never_submits_order(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.client.quote.return_value = (D("101"), D("101.01"))
+        self.observe("outside-price-limit")
+        self.trader.tick(self.store)
+        self.assertEqual(self.orders, [])
+        reply = Telegram.reply(self.store, ("fixed",), "/orders", self.cfg.execution)
+        self.assertIn("未下单", reply)
+        self.assertIn("价格超出入场范围 · 带单成交价 100 · 可成交报价 101.01 · 限价 100.50", reply)
+
     def test_status_reads_demo_and_mainnet_and_shows_position_matches(self):
         choose_mode(self.store, self.cfg.execution, "demo")
         self.observe("demo-entry")
@@ -221,6 +253,7 @@ class ExecutionTest(TestCase):
         self.client.account.return_value = self.asset, []
 
         pending_decision.set_result((D("0.25"), 3, "historical decision"))
+        self.assertTrue(worker.wake.is_set())
         worker.tick(self.store)
         self.assertEqual(len(self.orders), 2)
         decision = self.store.db.execute("SELECT account,message FROM telegram_ai_decisions").fetchone()

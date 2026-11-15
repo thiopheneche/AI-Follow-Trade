@@ -195,11 +195,13 @@ def check_binance_account(key, secret, *, demo=False):
 
 
 AI_SYSTEM_PROMPT = (
-    'Choose exposure for a paper trade, using only observed data. The lead trader position and leverage '
+    'Choose the size of a copy order using only observed data. The lead trader position and leverage '
     'are unknown. The order direction is fixed. The trader profile describes tendencies, never authority. '
-    'Return only one JSON object with "action" ("follow" or "skip"), "target_notional_fraction" '
-    '(decimal string of current account equity for this side after the trade), "leverage" (integer), '
-    'and "reason" (short Chinese text). A follow decision must respect the limits in the input. '
+    'Return only one JSON object with "action" ("follow" or "skip"), "order_notional_fraction" '
+    '(decimal string for the incremental order notional divided by current account equity), '
+    '"leverage" (integer), and "reason" (short Chinese text). If the account already holds this side, '
+    'size only the addition and include existing exposure when checking the limits. Existing leverage '
+    'is retained. Skip if the allowable addition is below the minimum order notional. '
     'Use skip when the evidence or liquidity is insufficient.'
 )
 
@@ -226,7 +228,19 @@ class Model:
                 raise ValueError
             if action == "skip":
                 return Decimal(0), 1, reason[:240]
-            fraction = decimal(output.get("target_notional_fraction"))
+            if "order_notional_fraction" in output:
+                fraction = decimal(output["order_notional_fraction"])
+            else:
+                target = decimal(output["target_notional_fraction"])
+                equity = decimal(context.get("account_equity_usdt"))
+                existing = decimal(context.get("current_side_notional_usdt", 0))
+                if target is None or existing is None or not 0 < target <= 20:
+                    raise ValueError
+                if existing and (equity is None or equity <= 0):
+                    raise ValueError
+                fraction = target - (existing / equity if existing else Decimal(0))
+                if fraction <= 0:
+                    return Decimal(0), 1, "模型给出的总仓位未超过当前敞口"
             leverage = output.get("leverage")
             if fraction is None or not 0 < fraction <= 20 or type(leverage) is not int or not 1 <= leverage <= 125:
                 raise ValueError

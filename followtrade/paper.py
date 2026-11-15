@@ -42,13 +42,13 @@ class PaperEngine:
         # Reserve entry fee and any immediate mark-to-market loss when computing the caps.
         drag = max(ZERO, direction * (price - mid)) + price * cfg.fee
         quantity = min(
-            (equity * fraction - current_qty * mid) / (risk_price + fraction * drag),
+            equity * fraction / (risk_price + fraction * drag),
             (equity * cfg.symbol_limit - contract_notional) / (risk_price + cfg.symbol_limit * drag),
             (equity * cfg.gross_limit - gross) / (risk_price + cfg.gross_limit * drag),
             (equity * cfg.margin_limit - margin) / (risk_price / leverage + cfg.margin_limit * drag),
         )
         if quantity <= 0 or quantity * price < cfg.minimum:
-            return "target reached or below minimum"
+            return "risk headroom or order below minimum"
         entry = ((current[2] * current_qty if current else ZERO) + price * quantity) / (current_qty + quantity)
         fee = quantity * price * cfg.fee
         old = current[0] if current else None
@@ -210,6 +210,7 @@ class PaperEngine:
             "lead_execution_price": signal.price, "signal_age_seconds": (now - signal.time) // 1000,
             "bid": quote.bid, "ask": quote.ask, "account_equity_usdt": equity,
             "current_side_notional_usdt": pos[0][1] * pos[0][3] if pos else ZERO,
+            "minimum_order_notional_usdt": self.config.minimum,
             "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": self.config.max_leverage,
             "symbol_notional_fraction_limit": self.config.symbol_limit,
             "gross_notional_fraction_limit": self.config.gross_limit, "margin_fraction_limit": self.config.margin_limit,

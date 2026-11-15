@@ -9,7 +9,7 @@ from probe import ProbeError, portfolio_id
 
 from .binance import BASE_URLS, Futures, MODE_LABELS, as_decimal
 from .clients import BinanceFeed, ServiceError, request_json
-from .execution import choose_mode, exchange_positions, format_exchange_order, mode_status
+from .execution import choose_mode, exchange_positions, format_entry_skip, format_exchange_order, mode_status
 from .store import Store, now_ms
 
 
@@ -24,7 +24,7 @@ COMMAND_HELP = (
     "/status  查看运行状态、模拟账户权益和币安 Demo／实盘仓位\n"
     "/positions  查看模拟持仓和 Bot 已核对的币安持仓\n"
     "/trades  查看最近的本地模拟成交\n"
-    "/orders  查看最近的币安委托和成交回报\n"
+    "/orders  查看最近的币安委托及跟单跳过原因\n"
     "/trader  查看或切换目标带单员 · /trader <ID> · /trader cancel\n"
     "/mode  查看新开仓去向和已绑定的币安账户\n\n"
     "切换新开仓去向\n"
@@ -55,6 +55,27 @@ def format_lead_fill(row, trader):
         f"成交数量 {row['quantity']} · 均价 {row['price']}\n"
         f"订单更新 {updated} · 检测到 {seen}（UTC+8）"
     )
+
+
+def recent_exchange_results(store):
+    orders = store.db.execute(
+        "SELECT o.*,s.symbol FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
+        "ORDER BY o.time DESC, o.rowid DESC LIMIT 8",
+    )
+    results = [(row["time"], format_exchange_order(row)) for row in orders]
+    skipped = store.db.execute(
+        "SELECT j.account,j.result,s.symbol,s.leg,s.first_seen FROM jobs j JOIN signals s ON s.identity=j.signal "
+        "WHERE j.account IN ('demo','mainnet') AND j.result IS NOT NULL AND s.action='increase' "
+        "AND NOT EXISTS (SELECT 1 FROM exchange_orders o WHERE o.mode=j.account AND o.signal=j.signal) "
+        "ORDER BY s.first_seen DESC, s.time DESC LIMIT 8"
+    )
+    for row in skipped:
+        label = MODE_LABELS[row["account"]]
+        direction = {"LONG": "做多", "SHORT": "做空"}[row["leg"]]
+        stamp = datetime.fromtimestamp(row["first_seen"] / 1000, UTC_PLUS_8).strftime("%m-%d %H:%M:%S")
+        reason = format_entry_skip(row["result"])
+        results.append((row["first_seen"], f"[{label}] {row['symbol']} {direction} · 未下单\n{stamp} 检测 · {reason}"))
+    return "\n\n".join(msg for _, msg in sorted(results, key=lambda item: item[0], reverse=True)[:8]) or "暂无币安委托"
 
 
 def format_binance_position(row, quantity, side, tracked):
@@ -340,9 +361,7 @@ class Telegram:
         if command == "/mode":
             return mode_status(store, execution) + "\n/paper 本地模拟 · /demo 币安 Demo · /live 币安正式账户"
         if command == "/orders":
-            rows = store.db.execute("SELECT o.*,s.symbol FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
-                                    "ORDER BY o.rowid DESC LIMIT 8").fetchall()
-            return "\n\n".join(format_exchange_order(row) for row in rows) or "暂无币安委托"
+            return recent_exchange_results(store)
         if command == "/status":
             source = store.get("feed_status", "等待轮询")
             quotes = store.get("quote_status", "等待行情")

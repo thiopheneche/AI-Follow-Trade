@@ -172,7 +172,7 @@ class Store:
             return portfolio
 
     def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False,
-               execution_modes=(), source=None):
+               execution_modes=(), source=None, observed_times=None):
         added = []
         with self.transaction():
             first_start = int(self.get("service.first_start", first_seen)) if notify_lead_fills else 0
@@ -190,11 +190,12 @@ class Store:
                     continue
                 # Keep legacy IDs for the configured trader and local stop events.
                 identity = f"{trader}:{signal.identity}" if source is not None and namespace else signal.identity
+                observed_at = observed_times.get(signal.identity, first_seen) if observed_times else first_seen
                 result = self.db.execute(
                     "INSERT OR IGNORE INTO signals(identity,time,symbol,leg,action,quantity,price,opened,first_seen,portfolio) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (
                     identity, signal.time, signal.symbol, signal.leg, signal.action,
-                    str(signal.quantity), str(signal.price), signal.opened, first_seen, trader,
+                    str(signal.quantity), str(signal.price), signal.opened, observed_at, trader,
                 ))
                 if not result.rowcount:
                     continue

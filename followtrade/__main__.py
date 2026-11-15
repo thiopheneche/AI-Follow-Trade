@@ -27,15 +27,16 @@ def collect(feed, last_end, end, *, include_head=False):
     start = max(end - MAX_LOOKBACK_MS, min(end - OVERLAP_MS, last_end - OVERLAP_MS))
     orders = feed.orders(start, end)
     orders_seen = now_ms()
-    late = []
+    supplemental = []
     if include_head:
         try:
-            late = [signal for signal in feed.head() if signal.time < start]
+            known = {signal.identity for signal in orders}
+            supplemental = [signal for signal in feed.head() if signal.time <= end and signal.identity not in known]
         except AccessStopped:
             raise
         except ProbeError as error:
             logging.warning("Recent order head poll failed: %s", error)
-    return orders, orders_seen, start, late
+    return orders, orders_seen, start, supplemental
 
 
 def close_batch(feed):
@@ -44,11 +45,12 @@ def close_batch(feed):
 
 
 class Runner:
-    def __init__(self, config, store, pool, model_pool=None):
+    def __init__(self, config, store, pool, model_pool=None, *, exchange_workers=()):
         self.config, self.store, self.pool = config, store, pool
         self.model_pool = model_pool if model_pool is not None else pool
         self.accounts = config.paper_accounts
         self.execution_modes = tuple(account.mode for account in config.execution)
+        self.exchange_workers = exchange_workers
         self.engine = PaperEngine(store, config)
         self.feed = BinanceFeed(store.active_trader())
         self.market = BinanceMarket()
@@ -64,13 +66,17 @@ class Runner:
         with self.store.transaction():
             self.store.put(key, text)
 
+    def _wake_execution(self):
+        for worker in self.exchange_workers:
+            worker.wake.set()
+
     def _read_orders(self, monotonic):
         if not self.order_task or not self.order_task.done():
             return
         task, end = self.order_task.future, self.order_task.end
         self.order_task = None
         try:
-            signals, seen, start, late = task.result()
+            signals, seen, start, supplemental = task.result()
         except AccessStopped as error:
             self.access_stopped = True
             self.update("feed_status", "访问被拒绝，等待人工检查后重启")
@@ -93,25 +99,30 @@ class Runner:
             progress["feed_status"] = ("检测到轮询缺口，暂停新增敞口" if gap
                                        else f"正常，最近一轮 {len(signals)} 条成交（含重复）")
             notify = self.config.telegram is not None and self.config.telegram.push_fills
-            new_orders = self.store.ingest(signals, self.accounts, seen, baseline=previous is None, progress=progress,
-                                           notify_lead_fills=notify, execution_modes=self.execution_modes,
-                                           source=self.feed.portfolio)
             finished = now_ms()
-            new_late = self.store.ingest(late, self.accounts, finished, baseline=previous is None,
-                                         notify_lead_fills=notify, execution_modes=self.execution_modes,
-                                         source=self.feed.portfolio)
+            observed_times = {signal.identity: finished for signal in supplemental}
+            collected = sorted([*signals, *supplemental], key=lambda signal: signal.time)
+            added = self.store.ingest(
+                collected, self.accounts, seen, baseline=previous is None, progress=progress,
+                notify_lead_fills=notify, execution_modes=self.execution_modes, source=self.feed.portfolio,
+                observed_times=observed_times,
+            )
+            if previous is not None and added:
+                self._wake_execution()
             latest = max((signal.time for signal in signals), default=None)
+            supplemental_new = sum(signal.identity in observed_times for signal in added)
             logging.info("Order poll ok portfolio=%s window_start_ms=%d started_ms=%d window_elapsed_ms=%d "
-                         "elapsed_ms=%d signals=%d latest_update_ms=%s new=%d late_new=%d",
+                         "elapsed_ms=%d signals=%d latest_update_ms=%s new=%d supplemental_new=%d",
                          self.feed.portfolio, start, end, seen - end, finished - end, len(signals), latest,
-                         len(new_orders), len(new_late))
+                         len(added), supplemental_new)
             if previous is not None:
-                for added, observed in ((new_orders, seen), (new_late, finished)):
-                    for signal in added:
-                        logging.info("Lead fill detected portfolio=%s symbol=%s side=%s action=%s order_update_ms=%d "
-                                     "first_seen_ms=%d age_ms=%d",
-                                     self.feed.portfolio, signal.symbol, signal.leg, signal.action,
-                                     signal.time, observed, observed - signal.time)
+                for signal in added:
+                    observed = observed_times.get(signal.identity, seen)
+                    source = "recent_page" if signal.identity in observed_times else "window"
+                    logging.info("Lead fill detected portfolio=%s symbol=%s side=%s action=%s source=%s order_update_ms=%d "
+                                 "first_seen_ms=%d age_ms=%d",
+                                 self.feed.portfolio, signal.symbol, signal.leg, signal.action, source,
+                                 signal.time, observed, observed - signal.time)
 
     def _read_closes(self, monotonic):
         if not self.close_task or not self.close_task.done():
@@ -130,8 +141,10 @@ class Runner:
         else:
             # A paper position can't predate bootstrap for the selected account.
             baseline = int(self.store.get("service.first_start", seen))
-            self.store.ingest((s for s in signals if s.time >= baseline), self.accounts, seen,
-                              execution_modes=self.execution_modes, source=self.feed.portfolio)
+            added = self.store.ingest((s for s in signals if s.time >= baseline), self.accounts, seen,
+                                      execution_modes=self.execution_modes, source=self.feed.portfolio)
+            if added:
+                self._wake_execution()
             self.update("close_status", "全平记录正常")
             self.next_close = monotonic + self.config.poll_seconds
 
@@ -319,15 +332,15 @@ def main():
         telegram.start()
     model_workers = int("ai" in accounts) + sum(account.strategy == "ai" for account in cfg.execution)
     model_pool = ThreadPoolExecutor(max_workers=model_workers) if model_workers else None
-    execution = [threading.Thread(target=ExchangeAccount(cfg, account, model_pool).serve, args=(stop,), daemon=True)
-                 for account in cfg.execution]
+    exchange_workers = tuple(ExchangeAccount(cfg, account, model_pool) for account in cfg.execution)
+    execution = [threading.Thread(target=worker.serve, args=(stop,), daemon=True) for worker in exchange_workers]
     for worker in execution:
         worker.start()
     logging.info("Paper accounts %s for portfolio %s", ", ".join(accounts), store.active_trader())
     logging.info("Order poll interval: %d seconds", cfg.poll_seconds)
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
-            runner = Runner(cfg, store, pool, model_pool)
+            runner = Runner(cfg, store, pool, model_pool, exchange_workers=exchange_workers)
             try:
                 while not stop.is_set():
                     runner.tick(stop)
@@ -335,6 +348,8 @@ def main():
                 stop.set()
     finally:
         stop.set()
+        for worker in exchange_workers:
+            worker.wake.set()
         if telegram:
             telegram.join(timeout=14)
         for worker in execution:

@@ -14,7 +14,7 @@ def format_ai_decision(account, signal, equity, decision, error=None, elapsed=No
     else:
         fraction, leverage, reason = decision
         if fraction:
-            lines.append(f"建议跟单 · 目标名义仓位 {fraction:.2%}（{fraction * Decimal(equity):.2f} USDT）")
+            lines.append(f"建议跟单 · 本单名义金额为账户权益的 {fraction:.2%}（{fraction * Decimal(equity):.2f} USDT）")
             lines.append(f"建议杠杆 {leverage} 倍 · 按建议估算保证金 {fraction * Decimal(equity) / leverage:.2f} USDT")
         else:
             lines.append("建议跳过")

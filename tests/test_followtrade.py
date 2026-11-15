@@ -7,9 +7,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from followtrade.__main__ import OrderTask, Runner
+from followtrade.__main__ import OrderTask, Runner, collect
 from followtrade.clients import BinanceFeed, Model, Quote, ServiceError, Signal
 from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.paper import PaperEngine
@@ -70,6 +70,17 @@ class PaperTest(unittest.TestCase):
         self.engine.process("fixed", close, self.quotes, None, NOW + 1)
         self.assertEqual(self.store.positions("fixed"), [])
         self.assertEqual(self.store.pending("fixed"), [])
+
+    def test_fixed_follow_adds_to_an_existing_position_within_exposure_cap(self):
+        self.entry(observed("open", at=NOW - 4000))
+        initial = D(self.store.positions("fixed")[0]["qty"])
+        self.entry(observed("add", at=NOW - 3000))
+        self.assertGreater(D(self.store.positions("fixed")[0]["qty"]), initial)
+        self.entry(observed("last-add", at=NOW - 2000))
+        self.entry(observed("over-cap", at=NOW - 1000))
+        _, equity, gross, _, _ = self.store.snapshot("fixed")
+        self.assertLessEqual(gross, equity * self.cfg.symbol_limit)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM fills WHERE action=?", ("加仓",)).fetchone()[0], 2)
 
     def test_ai_caps_leverage_and_notional(self):
         signal = observed("ai")
@@ -169,7 +180,8 @@ class PaperTest(unittest.TestCase):
 
     def test_order_poll_retries_on_normal_interval_and_logs_new_signal_age(self):
         cfg = replace(self.cfg, poll_seconds=30)
-        runner = Runner(cfg, self.store, None)
+        worker = Mock()
+        runner = Runner(cfg, self.store, None, exchange_workers=(worker,))
         with self.store.transaction():
             self.store.put("orders.last_end", NOW - 90_000)
         for i in range(3):
@@ -180,6 +192,7 @@ class PaperTest(unittest.TestCase):
             self.assertEqual(runner.next_poll, i * 31 + 30)
             self.assertIn("retry_seconds=30", logs.output[0])
             self.assertEqual(self.store.get("orders.last_end"), str(NOW - 90_000))
+        worker.wake.set.assert_not_called()
 
         runner.order_task = OrderTask(Future(), NOW)
         runner.order_task.future.set_result(([observed("new")], NOW + 10, NOW - 300_000, []))
@@ -187,6 +200,7 @@ class PaperTest(unittest.TestCase):
             runner._read_orders(100)
         self.assertIn("signals=1", logs.output[0])
         self.assertIn("age_ms=1010", logs.output[1])
+        worker.wake.set.assert_called_once()
         self.assertEqual(runner.poll_failures, 0)
         self.assertIn("正常", self.store.get("feed_status"))
 
@@ -286,6 +300,17 @@ class ClientsTest(unittest.TestCase):
             rows = feed.orders(0, 59)
         self.assertEqual({r.time for r in rows}, set(range(60)))
 
+    def test_periodic_recent_page_preserves_new_visible_rows_inside_window(self):
+        first = observed("already-in-window")
+        recent = observed("visible-on-recent-page", at=NOW - 2)
+        future = observed("past-window-end", at=NOW + 1)
+        feed = Mock()
+        feed.orders.return_value = [first]
+        feed.head.return_value = [future, recent, first]
+        orders, _, _, supplemental = collect(feed, NOW - 30_000, NOW, include_head=True)
+        self.assertEqual(orders, [first])
+        self.assertEqual(supplemental, [recent])
+
     def test_truncated_timestamp_fails_instead_of_advancing(self):
         feed = BinanceFeed("42")
         with patch.object(feed, "_fetch", return_value={"list": [self.order(9)], "total": 51}):
@@ -319,6 +344,20 @@ class ClientsTest(unittest.TestCase):
         with patch("followtrade.clients.request_json", return_value={"choices": []}):
             with self.assertRaises(ServiceError):
                 model.decide({})
+
+    def test_model_sizes_increment_and_normalizes_old_total_exposure_response(self):
+        model = Model(AIConfig("https://example.test/v1", "test", "test-key", 5, "profile"))
+        context = {"account_equity_usdt": "1000", "current_side_notional_usdt": "150"}
+        for field, value, expected in (
+            ("order_notional_fraction", ".10", D("0.10")),
+            ("target_notional_fraction", ".25", D("0.10")),
+            ("target_notional_fraction", ".15", D(0)),
+        ):
+            with self.subTest(field=field, value=value):
+                payload = {"action": "follow", field: value, "leverage": 5, "reason": "有效信号"}
+                result = {"choices": [{"message": {"content": json.dumps(payload)}}]}
+                with patch("followtrade.clients.request_json", return_value=result):
+                    self.assertEqual(model.decide(context)[0], expected)
 
 
 if __name__ == "__main__":

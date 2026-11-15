@@ -3,6 +3,7 @@ from decimal import Decimal, DecimalException, ROUND_UP
 import hashlib
 import logging
 import sqlite3
+from threading import Event
 import time
 
 from .ai_decision import format_ai_decision
@@ -40,6 +41,18 @@ def format_exchange_order(row):
             f"{row['failure'] or row['client_id']}")
 
 
+def format_entry_skip(reason):
+    if reason == "price moved past entry limit":
+        return "价格超出入场范围"
+    if reason == "target reached or below Binance minimum":
+        return "已达旧版仓位目标，或本单低于币安最小下单量"
+    if reason == "model deadline exceeded":
+        return "AI 判决超时"
+    if reason.startswith("AI skip:"):
+        return "AI 建议跳过 · " + reason.removeprefix("AI skip:").strip()
+    return reason
+
+
 def choose_mode(store, accounts, mode):
     if mode != "paper" and not any(account.mode == mode for account in accounts):
         return f"{MODE_LABELS[mode]}需要先在 VPS 录入密钥并验证交易权限。"
@@ -59,6 +72,7 @@ class ExchangeAccount:
         self.mode = account.mode
         self.client = Futures(self.mode, account.key, account.secret)
         self.model_pool = model_pool
+        self.wake = Event()
         self.ai_task = None
         self.ai_result = None
 
@@ -80,6 +94,7 @@ class ExchangeAccount:
             started = time.monotonic()
             task = self.model_pool.submit(Model(self.config.ai).decide, context)
             self.ai_task = signal, task, started, context["account_equity_usdt"]
+            task.add_done_callback(lambda _: self.wake.set())
         return WAITING_FOR_MODEL
 
     def _check_ai_deadline(self, store, pending):
@@ -258,7 +273,8 @@ class ExchangeAccount:
         limit = signal.price * (ONE + cfg.deviation if is_long else ONE - cfg.deviation)
         limit = rounded(limit, tick) if is_long else rounded(limit, tick, ROUND_UP)
         if not limit or (is_long and ask > limit) or (not is_long and bid < limit):
-            return "price moved past entry limit"
+            return (f"价格超出入场范围 · 带单成交价 {signal.price:f} · "
+                    f"可成交报价 {ask if is_long else bid:f} · 限价 {limit:f}")
         current = positions.get(signal.symbol)
         if current and (signal.symbol not in owned or owned[signal.symbol]["leg"] != signal.leg):
             return "existing opposite or unowned position"
@@ -267,11 +283,13 @@ class ExchangeAccount:
         notional = abs(as_decimal(current["notional"])) if current else ZERO
         if daily or equity <= 0:
             return "daily loss guard"
+        floor = max(cfg.minimum, as_decimal(rules["MIN_NOTIONAL"]["notional"]))
         if self.account.strategy == "ai":
             context = {**cfg.ai_trader_context(signal.portfolio),
                        "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
                        "lead_execution_price": signal.price, "signal_age_seconds": (now_ms() - signal.time) // 1000,
                        "bid": bid, "ask": ask, "account_equity_usdt": equity, "current_side_notional_usdt": notional,
+                       "minimum_order_notional_usdt": floor,
                        "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": cfg.max_leverage,
                        "symbol_notional_fraction_limit": cfg.symbol_limit,
                        "gross_notional_fraction_limit": cfg.gross_limit, "margin_fraction_limit": cfg.margin_limit}
@@ -291,13 +309,12 @@ class ExchangeAccount:
             return "existing contract leverage exceeds cap"
         lot = rules["LOT_SIZE"]
         risk_price = max(limit, ask)
-        desired = min(equity * fraction - notional, equity * cfg.symbol_limit - notional,
+        desired = min(equity * fraction, equity * cfg.symbol_limit - notional,
                       equity * cfg.gross_limit - gross, (equity * cfg.margin_limit - margin) * leverage,
                       min(wallet, as_decimal(asset["availableBalance"])) * leverage)
         quantity = rounded(min(desired / risk_price, as_decimal(lot["maxQty"])), as_decimal(lot["stepSize"]))
-        floor = max(cfg.minimum, as_decimal(rules["MIN_NOTIONAL"]["notional"]))
         if quantity < as_decimal(lot["minQty"]) or quantity * min(limit, bid) < floor:
-            return "target reached or below Binance minimum"
+            return f"剩余额度或本单金额低于最小下单量 · 合约最低名义金额 {floor:f}"
         if not current:
             if not self.entry_enabled(store, signal):
                 return "entry expired or route changed"
@@ -363,7 +380,7 @@ class ExchangeAccount:
                 signal = self._stop_signal(store, position, "daily_stop" if daily else "position_stop", now_ms())
                 self._exit(store, signal, position, self.client.filters(symbol), ONE, 0)
                 return
-        for signal, _seen in pending:
+        for signal, seen in pending:
             position = owned.get(signal.symbol)
             if signal.action == "increase":
                 closed = store.has_source_close(signal)
@@ -395,6 +412,10 @@ class ExchangeAccount:
                 continue
             if result is None:
                 return
+            if signal.action == "increase" and now_ms() - signal.time < self.config.max_age * 1000:
+                logging.info("Follow skipped mode=%s symbol=%s side=%s order_update_ms=%d "
+                             "after_detection_ms=%d reason=%s",
+                             self.mode, signal.symbol, signal.leg, signal.time, now_ms() - seen, result)
             with store.transaction():
                 store.done(self.mode, signal, result)
             if self.ai_result is not None and self.ai_result[0] == signal.identity:
@@ -407,6 +428,7 @@ class ExchangeAccount:
         with closing(store.db):
             while not stop.is_set():
                 state, delay = "就绪", 5
+                self.wake.clear()
                 try:
                     self.tick(store)
                 except (ServiceError, ValueError, KeyError, TypeError, DecimalException, StopIteration, sqlite3.Error) as error:
@@ -421,4 +443,8 @@ class ExchangeAccount:
                             logging.warning("Binance %s execution: %s", self.mode, state)
                 except sqlite3.OperationalError:
                     logging.warning("Could not update Binance %s execution status", self.mode)
-                stop.wait(delay)
+                if not stop.is_set():
+                    if delay == 5:
+                        self.wake.wait(delay)
+                    else:
+                        stop.wait(delay)
