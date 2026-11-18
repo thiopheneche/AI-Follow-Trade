@@ -1,5 +1,6 @@
 from concurrent.futures import Future
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -8,7 +9,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from followtrade.binance import BASE_URLS, ExecutionAccount, Futures
-from followtrade.clients import BinanceAPIError, ServiceError, Signal
+from followtrade.clients import BinanceAPIError, Quote, ServiceError, Signal
 from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.execution import ExchangeAccount, choose_mode
 from followtrade.store import Store, now_ms
@@ -172,6 +173,61 @@ class ExecutionTest(TestCase):
         self.assertIn("【币安正式账户仓位】 币安返回 0 个持仓，Bot 记录 0 个\n空仓", both)
         self.assertIn(f"{SYMBOL} · Bot 有跟单记录，币安未返回持仓", demo_only)
         self.assertIn("【币安正式账户仓位】 未绑定", demo_only)
+
+    def test_pnl_reads_both_accounts_and_excludes_transfers(self):
+        zone = timezone(timedelta(hours=8))
+        start = int(datetime(2026, 11, 18, tzinfo=zone).timestamp() * 1000)
+        now = start + 60_000
+        with self.store.transaction():
+            self.store.db.execute("INSERT INTO positions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                  ("fixed", SYMBOL, "SHORT", "2", "100", 3, start, start, "2"))
+            self.store.save_marks({SYMBOL: Quote(D("98"), D("98"), now - 1000)})
+            self.store.db.executemany(
+                "INSERT INTO fills(account,time,symbol,leg,action,qty,price,leverage,fee,realized,reason) "
+                "VALUES ('fixed', ?, ?, 'SHORT', 'exit', '1', '100', 3, ?, ?, 'test')",
+                [(start - 1, SYMBOL, ".5", "99"), (start, SYMBOL, ".25", "10")],
+            )
+
+        def signed(client, route, method="GET", **params):
+            self.assertEqual(method, "GET")
+            demo = client.base_url == BASE_URLS["demo"]
+            if route == "/fapi/v3/account":
+                assets = [{"asset": "USDT", "marginBalance": "1004", "unrealizedProfit": "4"}]
+                if demo:
+                    assets.append({"asset": "BTC", "marginBalance": ".002", "unrealizedProfit": "0"})
+                return {"assets": assets}
+            self.assertEqual(route, "/fapi/v1/income")
+            self.assertEqual(params, {"startTime": start, "endTime": now, "limit": 1000})
+            if not demo:
+                raise BinanceAPIError(401, -2015)
+            return [
+                {"time": start, "asset": asset, "incomeType": kind, "income": value}
+                for asset, kind, value in (
+                    ("USDT", "TRANSFER", "1000"), ("USDT", "REALIZED_PNL", "12"),
+                    ("USDT", "COMMISSION", "-2"), ("USDT", "FUNDING_FEE", "-3"),
+                    ("USDC", "FUNDING_FEE", ".125"),
+                )
+            ]
+
+        with patch.object(Futures, "signed", autospec=True, side_effect=signed), \
+                patch("followtrade.telegram.now_ms", return_value=now):
+            reply = Telegram.reply(self.store, ("fixed",), "/pnl", self.cfg.execution)
+        self.assertIn("11-18 00:01:00（北京时间）", reply)
+        self.assertIn("【本地模拟 · 固定策略】\nUSDT ｜ 权益 1004.0000 · 浮动盈亏 +4.0000", reply)
+        self.assertIn("已实现 +10.0000 · 手续费 -0.2500 · 今日净额 +9.7500", reply)
+        self.assertIn("BTC ｜ 权益 0.00200000", reply)
+        self.assertIn("已实现 +12.0000 · 手续费 -2.0000 · 资金费 -3.0000 · 今日净额 +7.0000", reply)
+        self.assertIn("USDC ｜ 已实现 +0.0000 · 手续费 +0.0000 · 资金费 +0.1250 · 今日净额 +0.1250", reply)
+        self.assertIn("【币安正式账户】\nUSDT ｜ 权益 1004.0000 · 浮动盈亏 +4.0000\n今日盈亏查询失败", reply)
+        self.assertIn("/pnl", Telegram.reply(self.store, ("fixed",), "/help"))
+
+    def test_income_history_reads_complete_disjoint_windows_when_full(self):
+        client = Futures("demo", "test-key", "test-secret")
+        with patch.object(client, "signed", side_effect=lambda route, **params: [
+            {"time": ms} for ms in range(params["startTime"], params["endTime"] + 1)
+        ][:params["limit"]]) as signed:
+            self.assertEqual([row["time"] for row in client.income_history(1, 1002)], list(range(1, 1003)))
+            self.assertEqual(signed.call_count, 3)
 
     def test_trader_switch_waits_for_exchange_position_without_opening_again(self):
         choose_mode(self.store, self.cfg.execution, "demo")

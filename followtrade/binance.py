@@ -63,13 +63,38 @@ class Futures:
         return request_json("Binance", url, timeout=5)
 
     def account(self):
-        account = self.signed("/fapi/v3/account")
-        if not isinstance(account, dict) or not isinstance(account.get("assets"), list):
-            raise ServiceError("Binance returned an invalid account response")
-        asset = next((row for row in account["assets"] if row["asset"] == "USDT"), None)
+        asset = next((row for row in self.account_assets() if row["asset"] == "USDT"), None)
         if not asset:
             raise ServiceError("Binance account has no USDT asset record")
         return asset, self.position_risk()
+
+    def account_assets(self):
+        account = self.signed("/fapi/v3/account")
+        if not isinstance(account, dict) or not isinstance(account.get("assets"), list):
+            raise ServiceError("Binance returned an invalid account response")
+        return account["assets"]
+
+    def income_history(self, start, end):
+        limit = 1000
+        windows = [(start, end)]
+        for _ in range(15):
+            left, right = windows.pop()
+            rows = self.signed("/fapi/v1/income", startTime=left, endTime=right, limit=limit)
+            if not isinstance(rows, list) or any(
+                not isinstance(row, dict) or type(row.get("time")) is not int or not left <= row["time"] <= right
+                for row in rows
+            ):
+                raise ServiceError("币安资金流水格式异常")
+            if len(rows) < limit:
+                yield from rows
+            elif left < right:
+                middle = (left + right) // 2
+                windows.extend(((middle + 1, right), (left, middle)))
+            else:
+                raise ServiceError("同一毫秒的币安资金流水超出查询上限")
+            if not windows:
+                return
+        raise ServiceError("当日资金流水超出本次查询上限")
 
     def position_risk(self):
         positions = self.signed("/fapi/v3/positionRisk")

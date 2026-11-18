@@ -10,6 +10,7 @@ from probe import ProbeError, portfolio_id
 from .binance import BASE_URLS, Futures, MODE_LABELS, as_decimal
 from .clients import BinanceFeed, ServiceError, request_json
 from .execution import choose_mode, exchange_positions, format_entry_skip, format_exchange_order, mode_status
+from .pnl import pnl_report
 from .store import Store, now_ms
 
 
@@ -22,6 +23,7 @@ COMMAND_HELP = (
     "Bot 操作指令\n"
     "/func · /help · /start  查看指令列表\n"
     "/status  查看运行状态、模拟账户权益和币安 Demo／实盘仓位\n"
+    "/pnl  查看账户权益、浮动盈亏和今日净盈亏\n"
     "/positions  查看模拟持仓和 Bot 已核对的币安持仓\n"
     "/trades  查看最近的本地模拟成交\n"
     "/orders  查看最近的币安委托及跟单跳过原因\n"
@@ -362,6 +364,8 @@ class Telegram:
             return mode_status(store, execution) + "\n/paper 本地模拟 · /demo 币安 Demo · /live 币安正式账户"
         if command == "/orders":
             return recent_exchange_results(store)
+        if command == "/pnl":
+            return pnl_report(store, accounts, execution, now_ms(), UTC_PLUS_8)
         if command == "/status":
             source = store.get("feed_status", "等待轮询")
             quotes = store.get("quote_status", "等待行情")
