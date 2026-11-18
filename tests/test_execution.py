@@ -229,6 +229,63 @@ class ExecutionTest(TestCase):
             self.assertEqual([row["time"] for row in client.income_history(1, 1002)], list(range(1, 1003)))
             self.assertEqual(signed.call_count, 3)
 
+    def test_history_groups_demo_fills_and_caches_only_complete_orders(self):
+        signal = self.observe("historical-close", action="close")
+        with self.store.transaction():
+            self.store.db.execute(
+                "INSERT INTO exchange_orders(client_id,mode,signal,side,quantity,leverage,time,action,status,executed,price) "
+                "VALUES ('ft-historical','demo',?,'SELL','3',0,?,'close','EXPIRED','2','100')",
+                (signal.identity, signal.time),
+            )
+        order = {"clientOrderId": "ft-historical", "symbol": SYMBOL, "side": "SELL", "orderId": 71, "executedQty": "2"}
+        fills = [{"orderId": 71, "symbol": SYMBOL, "side": "SELL", "id": n, "time": signal.time + n,
+                  "qty": "1", "marginAsset": "USDT", "realizedPnl": pnl, "commissionAsset": asset,
+                  "commission": fee}
+                 for n, pnl, asset, fee in [(1, "7", "USDT", ".1"), (2, "-2", "BNB", ".005")]]
+
+        def signed(client, route, method="GET", **params):
+            self.assertEqual(client.base_url, BASE_URLS["demo"])
+            self.assertEqual(method, "GET")
+            if route == "/fapi/v1/order":
+                self.assertEqual(params, {"symbol": SYMBOL, "origClientOrderId": "ft-historical"})
+                return order
+            self.assertEqual(route, "/fapi/v1/userTrades")
+            self.assertEqual(params["orderId"], 71)
+            return [*fills, {"orderId": 72, "realizedPnl": "900"}]
+
+        with patch.object(Futures, "signed", side_effect=[order, fills[:1]]):
+            partial = Telegram.reply(self.store, ("fixed",), "/history", self.cfg.execution, argument="demo")
+        self.assertIn("盈亏暂不可用 · 币安成交明细暂不完整", partial)
+        self.assertIsNone(self.store.db.execute("SELECT amounts FROM exchange_order_pnl").fetchone())
+
+        with patch.object(Futures, "signed", autospec=True, side_effect=signed):
+            bot = Telegram(TelegramConfig("123:fake", 1, True))
+            report = bot.handle_message(self.store, ("fixed",), self.cfg.execution, "/history@Bot demo", 0)
+        self.assertIn("平仓 · 部分成交（已过期）", report)
+        self.assertIn("USDT ｜ 已实现 +5.0000 · 手续费 0.1000 · 净额 +4.9000", report)
+        self.assertIn("BNB ｜ 已实现 +0.00000000 · 手续费 0.00500000 · 净额 -0.00500000", report)
+        with patch.object(Futures, "signed") as api:
+            cached = Telegram.reply(self.store, ("fixed",), "/history", self.cfg.execution, argument="demo")
+            api.assert_not_called()
+        self.assertEqual(cached, report)
+
+    def test_history_paginates_paper_and_includes_entry_fees(self):
+        with self.store.transaction():
+            self.store.db.executemany(
+                "INSERT INTO fills(account,time,symbol,leg,action,qty,price,leverage,fee,realized,reason) "
+                "VALUES ('fixed', ?, ?, 'LONG', ?, '1', '100', 3, '0.25', ?, 'test')",
+                [(1000 + i, f"TEST{i}USDT", "开仓" if i == 0 else "平仓", "0" if i == 0 else "2")
+                 for i in range(9)],
+            )
+        first = Telegram.reply(self.store, ("fixed",), "/history", argument="paper")
+        second = Telegram.reply(self.store, ("fixed",), "/history", argument="paper 2")
+        self.assertIn("下一页 /history paper 2", first)
+        self.assertNotIn("TEST0USDT", first)
+        self.assertIn("TEST0USDT 多 · 开仓", second)
+        self.assertIn("已实现 +0.0000 · 手续费 0.2500 · 净额 -0.2500", second)
+        self.assertIn("上一页 /history paper 1", second)
+        self.assertIn("暂无跟单记录", Telegram.reply(self.store, ("fixed",), "/history", argument="live"))
+
     def test_trader_switch_waits_for_exchange_position_without_opening_again(self):
         choose_mode(self.store, self.cfg.execution, "demo")
         entry = self.observe("demo-entry")

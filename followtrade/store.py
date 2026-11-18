@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS exchange_orders (
     failure TEXT, notified INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS exchange_orders_mode ON exchange_orders(mode, status);
+CREATE TABLE IF NOT EXISTS exchange_order_pnl (
+    client_id TEXT PRIMARY KEY REFERENCES exchange_orders(client_id),
+    filled_at INTEGER NOT NULL, amounts TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS exchange_positions (
     mode TEXT NOT NULL, symbol TEXT NOT NULL, leg TEXT NOT NULL, quantity TEXT NOT NULL,
     opened INTEGER NOT NULL, last_entry INTEGER NOT NULL, entry_signal TEXT NOT NULL REFERENCES signals(identity),

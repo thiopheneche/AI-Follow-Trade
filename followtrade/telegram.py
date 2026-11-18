@@ -10,6 +10,7 @@ from probe import ProbeError, portfolio_id
 from .binance import BASE_URLS, Futures, MODE_LABELS, as_decimal
 from .clients import BinanceFeed, ServiceError, request_json
 from .execution import choose_mode, exchange_positions, format_entry_skip, format_exchange_order, mode_status
+from .history import trade_history
 from .pnl import pnl_report
 from .store import Store, now_ms
 
@@ -24,6 +25,7 @@ COMMAND_HELP = (
     "/func · /help · /start  查看指令列表\n"
     "/status  查看运行状态、模拟账户权益和币安 Demo／实盘仓位\n"
     "/pnl  查看账户权益、浮动盈亏和今日净盈亏\n"
+    "/history [all|paper|demo|live] [页码]  查看逐单成交和盈亏\n"
     "/positions  查看模拟持仓和 Bot 已核对的币安持仓\n"
     "/trades  查看最近的本地模拟成交\n"
     "/orders  查看最近的币安委托及跟单跳过原因\n"
@@ -285,7 +287,7 @@ class Telegram:
                 store.put("telegram.trader_input_until", now + COMMAND_MAX_AGE_MS)
             return self.trader_status(store) + "\n请在 5 分钟内发送组合 ID 或带单详情链接。也可以直接发送 /trader <ID>。"
         if command != "/trader" and not taking_input:
-            return self.reply(store, accounts, command, execution)
+            return self.reply(store, accounts, command, execution, argument=argument)
         value = text.strip() if taking_input else argument
         cancel = value.lower() == "cancel"
         if not cancel:
@@ -353,7 +355,7 @@ class Telegram:
             store.db.close()
 
     @staticmethod
-    def reply(store, accounts, command, execution=()):
+    def reply(store, accounts, command, execution=(), *, argument=""):
         if command in ("/func", "/help", "/start"):
             return COMMAND_HELP
         if command == "/trader":
@@ -366,6 +368,8 @@ class Telegram:
             return recent_exchange_results(store)
         if command == "/pnl":
             return pnl_report(store, accounts, execution, now_ms(), UTC_PLUS_8)
+        if command == "/history":
+            return trade_history(store, execution, argument, UTC_PLUS_8)
         if command == "/status":
             source = store.get("feed_status", "等待轮询")
             quotes = store.get("quote_status", "等待行情")
