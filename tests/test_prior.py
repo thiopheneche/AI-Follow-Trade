@@ -104,6 +104,42 @@ class PriorTest(unittest.TestCase):
         self.assertEqual(prior["history"]["all"]["reportedLeverage"]["count"], 0)
         self.assertIsNone(prior["history"]["all"]["cyclePeakCostNotionalProxyUsdt"]["median"])
 
+    def test_assumed_capital_ratios_use_actual_order_prices_and_keep_observed_equity_separate(self):
+        self.orders[1]["avgPrice"] = "120"
+        prior = analyze_evidence(self.evidence(), assumed_capital_usdt="2000")
+        scenario = prior["assumedCapitalScenario"]
+        self.assertEqual(scenario["capitalUsdt"], "2000")
+        self.assertEqual(scenario["source"], "user_estimate")
+        self.assertTrue(scenario["isHypothetical"])
+        self.assertFalse(scenario["verifiedByBinance"])
+        self.assertEqual(prior["snapshotAtCollection"]["marginBalanceUsdt"], "500")
+        self.assertIsNone(prior["historicalAccountExposureFractions"])
+        self.assertIsNone(scenario["accountGrossExposureFraction"])
+        self.assertEqual(D(scenario["recent30Days"]["cyclePeakCostExposureFraction"]["median"]), D(".5"))
+        self.assertEqual(D(scenario["recent30Days"]["estimatedInitialMarginFraction"]["median"]), D(".1"))
+        orders = scenario["reconciledOrderSizing"]
+        self.assertEqual(D(orders["initialOrderNotionalFraction"]["median"]), D(".2"))
+        self.assertEqual(D(orders["additionOrderNotionalFraction"]["median"]), D(".36"))
+        doubled = analyze_evidence(self.evidence(), assumed_capital_usdt="4000")["assumedCapitalScenario"]
+        self.assertEqual(D(doubled["reconciledOrderSizing"]["additionOrderNotionalFraction"]["median"]), D(".18"))
+
+    def test_invalid_capital_does_not_create_an_assumed_scenario(self):
+        self.assertNotIn("assumedCapitalScenario", analyze_evidence(self.evidence()))
+        for capital in ("0", "-100", "NaN", "Infinity", "bad"):
+            with self.subTest(capital=capital), self.assertRaises(ValueError):
+                analyze_evidence(self.evidence(), assumed_capital_usdt=capital)
+
+    def test_assumed_scenario_context_keeps_only_the_signal_symbol(self):
+        self.history.append({**self.history[0], "positionId": "2", "symbol": "ETHUSDT"})
+        prior = analyze_evidence(self.evidence(), assumed_capital_usdt="3000000")
+        save_prior(self.cfg.database, prior)
+        context = prior_context(self.store, PID, NOW, symbol="BTCUSDT")["lead_trader_sizing_prior"]
+        scenario = context["assumedCapitalScenario"]
+        self.assertNotIn("bySymbolRecent30Days", scenario)
+        self.assertEqual(scenario["signalSymbolRecent30Days"]["cyclePeakCostExposureFraction"]["count"], 1)
+        self.assertFalse(scenario["verifiedByBinance"])
+        self.assertIsNone(context["historicalAccountExposureFractions"])
+
     def test_portfolio_scope_expiration_and_invalid_cache(self):
         prior = analyze_evidence(self.evidence())
         save_prior(self.cfg.database, prior)

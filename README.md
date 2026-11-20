@@ -50,6 +50,7 @@ python -m followtrade.prior <portfolioId> --database /path/to/state.sqlite3 --ra
 ```
 
 只有数量能够完整对齐的已平仓轮次参与首仓和加仓统计。缺少同期权益时，账户仓位比例保持未知。
+可通过 `--assumed-capital-usdt 3000000` 额外按用户估计的资金基数计算仓位和单笔成交比例；AI 会将其作为假设情景读取，与币安实测字段分开标注。
 
 ## 测试
 

@@ -53,6 +53,22 @@ def _history_summary(rows):
             "cyclePeakCostNotionalProxyUsdt": distribution(cost_notionals)}
 
 
+def _capital_summary(rows, capital):
+    exposure, margin = [], []
+    for row in rows:
+        price, quantity = _number(row.get("avgCost")), _number(row.get("maxOpenInterest"))
+        if (row.get("type") != "UM" or not str(row.get("symbol", "")).endswith("USDT")
+                or price is None or price <= 0 or quantity is None or quantity <= 0):
+            continue
+        fraction = price * quantity / capital
+        exposure.append(fraction)
+        leverage = _number(row.get("leverage"))
+        if leverage is not None and 1 <= leverage <= 125 and leverage == leverage.to_integral_value():
+            margin.append(fraction / leverage)
+    return {"cyclePeakCostExposureFraction": distribution(exposure),
+            "estimatedInitialMarginFraction": distribution(margin)}
+
+
 def _replay_cycles(rows, orders, window):
     """Use only complete, unambiguous cycles whose quantities reconcile with history."""
     matched = {str(row["positionId"]): [] for row in rows}
@@ -75,6 +91,7 @@ def _replay_cycles(rows, orders, window):
         tolerance = max(Decimal(".00000001"), expected * Decimal(".000001"))
         balance, peak = Decimal(0), Decimal(0)
         increases = []
+        increase_notionals = []
         valid = cycle[0]["side_hint"] and cycle[0]["side_hint"].endswith("_INCREASE")
         valid = valid and abs(cycle[0]["order_time_ms"] - row["opened"]) <= 1000
         for order in cycle:
@@ -83,6 +100,7 @@ def _replay_cycles(rows, orders, window):
                 break
             if order["side_hint"].endswith("_INCREASE"):
                 increases.append(order["quantity"])
+                increase_notionals.append(order["quantity"] * order["avg_price"])
                 balance += order["quantity"]
                 peak = max(peak, balance)
             else:
@@ -95,11 +113,16 @@ def _replay_cycles(rows, orders, window):
         results.append({"positionId": str(row["positionId"]), "symbol": row["symbol"],
                         "initialQuantityFractionOfCyclePeak": increases[0] / peak,
                         "additionQuantityFractionsOfCyclePeak": [qty / peak for qty in increases[1:]],
+                        "initialOrderNotionalUsdt": increase_notionals[0],
+                        "additionOrderNotionalsUsdt": increase_notionals[1:],
                         "increaseOrders": len(increases)})
     return results
 
 
-def analyze_evidence(evidence):
+def analyze_evidence(evidence, *, assumed_capital_usdt=None):
+    capital = _number(assumed_capital_usdt)
+    if assumed_capital_usdt is not None and (capital is None or capital <= 0):
+        raise ValueError("assumed capital must be a finite positive USDT amount")
     snapshot = evidence["snapshot"]
     pid = portfolio_id(snapshot["portfolioId"])
     responses = [item for item in evidence["rawResponses"]
@@ -147,7 +170,7 @@ def analyze_evidence(evidence):
     replayed = _replay_cycles(closed, list(orders.values()), window) if complete_orders else []
     initial = [cycle["initialQuantityFractionOfCyclePeak"] for cycle in replayed]
     additions = [fraction for cycle in replayed for fraction in cycle["additionQuantityFractionsOfCyclePeak"]]
-    return {
+    prior = {
         "schemaVersion": 1, "portfolioId": pid, "traderName": detail.get("nickname"),
         "collectedAtMs": collected_ms, "collectedAt": collected,
         "snapshotAtCollection": {"marginBalanceUsdt": str(snapshot["marginBalance"]) if
@@ -185,6 +208,40 @@ def analyze_evidence(evidence):
             "样本仅覆盖公开可见历史；缺失、不完整或无法对齐的交易轮次不参与首仓/加仓比例统计。",
         ],
     }
+    if capital is not None:
+        # These are paired, per-order calculations, not products of independent medians.
+        usdt_ids = {str(row["positionId"]) for row in closed if row.get("type") == "UM"
+                    and row["symbol"].endswith("USDT")}
+        usdt_cycles = [cycle for cycle in replayed if cycle["positionId"] in usdt_ids]
+        prior["assumedCapitalScenario"] = {
+            "capitalUsdt": str(capital), "source": "user_estimate", "verifiedByBinance": False,
+            "isHypothetical": True,
+            "denominator": "Assume this amount is equity backing the lead portfolio; external assets may not back it.",
+            "allClosedCycles": _capital_summary(closed, capital),
+            "recent30Days": _capital_summary(recent, capital),
+            "bySymbolRecent30Days": {symbol: _capital_summary([row for row in recent if row["symbol"] == symbol], capital)
+                                     for symbol in sorted({row["symbol"] for row in recent})},
+            "reconciledOrderSizing": {
+                "cycles": len(usdt_cycles),
+                "initialOrderNotionalFraction": distribution([cycle["initialOrderNotionalUsdt"] / capital
+                                                               for cycle in usdt_cycles]),
+                "additionOrderNotionalFraction": distribution([notional / capital for cycle in usdt_cycles
+                                                                for notional in cycle["additionOrderNotionalsUsdt"]]),
+            },
+            "accountGrossExposureFraction": None,
+            "formulas": {
+                "cyclePeakCostExposureFraction": "avgCost * maxOpenInterest / assumedCapitalUsdt",
+                "estimatedInitialMarginFraction": "avgCost * maxOpenInterest / reportedHistoricalLeverage / assumedCapitalUsdt",
+                "orderNotionalFraction": "executedQty * avgPrice / assumedCapitalUsdt",
+            },
+            "limitations": [
+                "资金基数是用户估计，不是币安返回的同期带单账户权益；不能用作当前余额或历史实测仓位比例。",
+                "逐轮按固定资金基数估算，不含资金进出、历史权益变化、费用和资金费。",
+                "估算初始保证金不等于全仓账户实际分配保证金；历史杠杆也不保证是开仓当时的设置。",
+                "每轮峰值名义金额按平均成本近似；多个标的的峰值不能相加当作同时账户敞口。",
+            ],
+        }
+    return prior
 
 
 def collect_evidence(pid, *, history_pages=10, order_days=7):
@@ -247,6 +304,16 @@ def prior_context(store, pid, at_ms, *, symbol=None):
         if not isinstance(by_symbol, dict):
             raise ValueError
         prior["signalSymbolRecent30Days"] = by_symbol.get(symbol)
+        scenario = prior.get("assumedCapitalScenario")
+        if scenario is not None:
+            if not isinstance(scenario, dict):
+                raise ValueError
+            scenario = dict(scenario)
+            by_symbol = scenario.pop("bySymbolRecent30Days", {})
+            if not isinstance(by_symbol, dict):
+                raise ValueError
+            scenario["signalSymbolRecent30Days"] = by_symbol.get(symbol)
+            prior["assumedCapitalScenario"] = scenario
         return {"lead_trader_sizing_prior": {**prior, "available": True, "ageSeconds": max(0, age // 1000)}}
     except (ValueError, KeyError, TypeError):
         return {"lead_trader_sizing_prior": {**unavailable, "reason": "invalid_cache"}}
@@ -259,11 +326,15 @@ def main():
     parser.add_argument("--raw", type=Path, help="save sanitized public responses")
     parser.add_argument("--output", type=Path, help="save the computed prior")
     parser.add_argument("--database", type=Path, help="store the prior in the existing bot database")
+    parser.add_argument("--assumed-capital-usdt", help="user-estimated capital for a separate hypothetical sizing scenario")
     args = parser.parse_args()
     evidence = json.loads(args.evidence.read_text(encoding="utf-8-sig")) if args.evidence else collect_evidence(args.portfolio_id)
     if evidence["snapshot"]["portfolioId"] != args.portfolio_id:
         parser.error("evidence portfolio does not match request")
-    prior = analyze_evidence(evidence)
+    try:
+        prior = analyze_evidence(evidence, assumed_capital_usdt=args.assumed_capital_usdt)
+    except ValueError as error:
+        parser.error(str(error))
     if args.raw:
         args.raw.write_text(json.dumps(evidence, ensure_ascii=True, indent=2, default=str) + "\n", encoding="utf-8")
     if not prior["history"]["all"]["closedCycles"]:

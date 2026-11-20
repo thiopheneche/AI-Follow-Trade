@@ -209,6 +209,9 @@ AI_SYSTEM_PROMPT = (
     'Its quantity fractions use the source cycle peak quantity as denominator, never account equity. '
     'Do not use a collected balance or AUM as historical equity; unavailable account exposure stays unknown. '
     'Historical reported leverage is not verified opening-time or current contract leverage. '
+    'An assumedCapitalScenario uses user-estimated capital, not Binance-verified equity. '
+    'Its notional fractions are hypothetical historical ratios; never treat them as live balances or verified exposures. '
+    'When provided, use the scenario as a weak sizing prior with its uncertainty and sample sizes. '
     'Prefer the recent and signal-symbol samples, account for small sample sizes, and obey all account limits. '
     'Use skip when the evidence or liquidity is insufficient.'
 )
