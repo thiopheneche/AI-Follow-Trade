@@ -20,6 +20,7 @@
   "ai": {
     "enabled": false,
     "local_paper_enabled": true,
+    "position_limits_enabled": false,
     "base_url": "",
     "model": "",
     "timeout_seconds": 60,

@@ -99,12 +99,13 @@ def configure(mode):
         route_config["max_entry_deviation_fraction"] = existing["max_entry_deviation_fraction"]
     if mode == "demo":
         try:
-            budget = Decimal(input("Demo 策略预算（USDT）: ").strip())
-            if not budget.is_finite() or not 1 <= budget <= 10_000_000:
+            value = input("Demo 策略预算（USDT，留空使用全账户权益）: ").strip()
+            budget = Decimal(value) if value else None
+            if budget is not None and (not budget.is_finite() or not 1 <= budget <= 10_000_000):
                 raise InvalidOperation
         except InvalidOperation:
             raise SystemExit("预算须为 1 到 10,000,000 USDT。") from None
-        route_config["budget_usdt"] = str(budget)
+        route_config["budget_usdt"] = str(budget) if budget is not None else None
     original_env = env_path.read_text(encoding="utf-8") if env_path.exists() else None
     prefix = credentials_prefix(mode)
     values = {prefix + "KEY": key, prefix + "SECRET": password}

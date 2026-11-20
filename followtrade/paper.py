@@ -22,7 +22,9 @@ class PaperEngine:
 
     def _entry(self, account, signal, quote, fraction, leverage, reason, now):
         db, cfg = self.store.db, self.config
-        fraction = min(fraction, cfg.order_limit)
+        limited = cfg.position_limits_enabled(account)
+        if limited:
+            fraction = min(fraction, cfg.order_limit)
         cash, equity, gross, margin, details = self.store.snapshot(account)
         if any(not -5000 <= now - row[4] <= QUOTE_MAX_AGE_MS for row in details):
             return "account quotes stale"
@@ -34,8 +36,11 @@ class PaperEngine:
         price = (quote.ask if direction > 0 else quote.bid) * (ONE + direction * cfg.slip)
         if direction * (price - signal.price) / signal.price > cfg.deviation:
             return "price moved past entry limit"
-        leverage = same_symbol[0][0]["leverage"] if same_symbol else min(leverage, cfg.max_leverage)
-        if leverage > cfg.max_leverage:
+        if same_symbol:
+            leverage = same_symbol[0][0]["leverage"]
+        elif limited:
+            leverage = min(leverage, cfg.max_leverage)
+        if leverage < 1 or (limited and leverage > cfg.max_leverage):
             return "existing contract leverage exceeds cap"
         current_qty = current[1] if current else ZERO
         mid = (quote.bid + quote.ask) / 2
@@ -43,12 +48,17 @@ class PaperEngine:
         contract_notional = sum((row[1] * row[3] for row in same_symbol), ZERO)
         # Reserve entry fee and any immediate mark-to-market loss when computing the caps.
         drag = max(ZERO, direction * (price - mid)) + price * cfg.fee
-        quantity = min(
+        quantities = [
             equity * fraction / (risk_price + fraction * drag),
-            (equity * cfg.symbol_limit - contract_notional) / (risk_price + cfg.symbol_limit * drag),
-            (equity * cfg.gross_limit - gross) / (risk_price + cfg.gross_limit * drag),
-            (equity * cfg.margin_limit - margin) / (risk_price / leverage + cfg.margin_limit * drag),
-        )
+            (equity * (cfg.margin_limit if limited else ONE) - margin)
+            / (risk_price / leverage + (cfg.margin_limit if limited else ONE) * drag),
+        ]
+        if limited:
+            quantities.extend([
+                (equity * cfg.symbol_limit - contract_notional) / (risk_price + cfg.symbol_limit * drag),
+                (equity * cfg.gross_limit - gross) / (risk_price + cfg.gross_limit * drag),
+            ])
+        quantity = min(quantities)
         if quantity <= 0 or quantity * price < cfg.minimum:
             return "risk headroom or order below minimum"
         entry = ((current[2] * current_qty if current else ZERO) + price * quantity) / (current_qty + quantity)
@@ -209,13 +219,12 @@ class PaperEngine:
         return {
             **self.config.ai_trader_context(signal.portfolio),
             **prior_context(self.store, signal.portfolio or self.store.active_trader(), now, symbol=signal.symbol),
+            **self.config.sizing_context("ai"),
             "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
             "lead_execution_price": signal.price, "signal_age_seconds": (now - signal.time) // 1000,
             "bid": quote.bid, "ask": quote.ask, "account_equity_usdt": equity,
             "current_side_notional_usdt": pos[0][1] * pos[0][3] if pos else ZERO,
             "minimum_order_notional_usdt": self.config.minimum,
-            "order_notional_fraction_limit": self.config.order_limit,
-            "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": self.config.max_leverage,
-            "symbol_notional_fraction_limit": self.config.symbol_limit,
-            "gross_notional_fraction_limit": self.config.gross_limit, "margin_fraction_limit": self.config.margin_limit,
+            "gross_notional_usdt": gross, "estimated_margin_usdt": margin,
+            "available_balance_usdt": max(ZERO, equity - margin),
         }

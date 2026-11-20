@@ -202,8 +202,10 @@ AI_SYSTEM_PROMPT = (
     '(decimal string for the incremental order notional divided by current account equity), '
     '"leverage" (integer), and "reason" (short Chinese text). If the account already holds this side, '
     'size only the addition and include existing exposure when checking the limits. Existing leverage '
-    'is retained. Each order must respect order_notional_fraction_limit, the maximum incremental '
-    'notional divided by equity. Leave room for subsequent additions within the symbol limit. '
+    'is retained. A non-null sizing limit is mandatory; null disables that strategy ceiling. '
+    'When position_limits_enabled is false, judge incremental size and leverage from the historical prior, '
+    'current exposure and account funds without applying old percentage caps. Available margin and '
+    'exchange leverage/notional brackets remain binding. Leave room for likely subsequent additions. '
     'Skip if the allowable addition is below the minimum order notional. '
     'lead_trader_sizing_prior is descriptive historical data, not a sizing instruction. '
     'Its quantity fractions use the source cycle peak quantity as denominator, never account equity. '
@@ -245,7 +247,7 @@ class Model:
                 target = decimal(output["target_notional_fraction"])
                 equity = decimal(context.get("account_equity_usdt"))
                 existing = decimal(context.get("current_side_notional_usdt", 0))
-                if target is None or existing is None or not 0 < target <= 20:
+                if target is None or existing is None or target <= 0:
                     raise ValueError
                 if existing and (equity is None or equity <= 0):
                     raise ValueError
@@ -253,11 +255,14 @@ class Model:
                 if fraction <= 0:
                     return Decimal(0), 1, "模型给出的总仓位未超过当前敞口"
             leverage = output.get("leverage")
-            if fraction is None or not 0 < fraction <= 20 or type(leverage) is not int or not 1 <= leverage <= 125:
+            if fraction is None or fraction <= 0 or type(leverage) is not int or leverage < 1:
                 raise ValueError
-            if "order_notional_fraction_limit" in context:
+            maximum = context.get("max_leverage")
+            if maximum is not None and (type(maximum) is not int or maximum < 1 or leverage > maximum):
+                raise ValueError
+            if context.get("order_notional_fraction_limit") is not None:
                 order_limit = decimal(context["order_notional_fraction_limit"])
-                if order_limit is None or not 0 < order_limit <= 20:
+                if order_limit is None or order_limit <= 0:
                     raise ValueError
                 fraction = min(fraction, order_limit)
             return fraction, leverage, reason[:240]

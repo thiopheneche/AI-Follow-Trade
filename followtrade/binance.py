@@ -46,6 +46,7 @@ class Futures:
         self.base_url, self.key, self.secret = BASE_URLS[mode], key, secret
         self.rules = {}
         self.rules_until = 0
+        self.brackets = {}
 
     def signed(self, route, method="GET", **params):
         query = urlencode({**params, "timestamp": time.time_ns() // 1_000_000, "recvWindow": 5000})
@@ -139,6 +140,27 @@ class Futures:
         if not 0 < bid <= ask or abs(time.time_ns() // 1_000_000 - quote["time"]) > 30_000:
             raise ServiceError(f"Binance quote stale or invalid for {symbol}")
         return bid, ask
+
+    def leverage_brackets(self, symbol):
+        cached = self.brackets.get(symbol)
+        if cached is not None and cached[0] > time.monotonic():
+            return cached[1]
+        result = self.signed("/fapi/v1/leverageBracket", symbol=symbol)
+        rows = result if isinstance(result, list) else [result]
+        matching = [row for row in rows if isinstance(row, dict) and row.get("symbol") == symbol]
+        if len(matching) != 1 or not isinstance(matching[0].get("brackets"), list) or not matching[0]["brackets"]:
+            raise ServiceError("Binance returned invalid leverage brackets")
+        brackets = []
+        for row in matching[0]["brackets"]:
+            if not isinstance(row, dict) or type(row.get("initialLeverage")) is not int or row["initialLeverage"] < 1:
+                raise ServiceError("Binance returned invalid leverage brackets")
+            floor, cap = as_decimal(row.get("notionalFloor")), as_decimal(row.get("notionalCap"))
+            if not 0 <= floor < cap:
+                raise ServiceError("Binance returned invalid notional brackets")
+            brackets.append({"initialLeverage": row["initialLeverage"], "notionalFloor": floor, "notionalCap": cap})
+        value = {"symbol": symbol, "notionalCoef": matching[0].get("notionalCoef"), "brackets": brackets}
+        self.brackets[symbol] = time.monotonic() + 300, value
+        return value
 
     def test_order(self):
         symbol = "BTCUSDT"

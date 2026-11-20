@@ -268,6 +268,7 @@ class ExchangeAccount:
 
     def _entry(self, store, signal, asset, positions, owned, wallet, equity, daily):
         cfg = self.config
+        limited = cfg.position_limits_enabled(self.account.strategy)
         bid, ask = self.client.quote(signal.symbol)
         is_long = signal.leg == "LONG"
         rules = self.client.filters(signal.symbol)
@@ -289,17 +290,24 @@ class ExchangeAccount:
         if daily or equity <= 0:
             return "daily loss guard"
         floor = max(cfg.minimum, as_decimal(rules["MIN_NOTIONAL"]["notional"]))
+        exchange_rules = None
         if self.account.strategy == "ai":
+            sizing = cfg.sizing_context("ai")
+            if not limited:
+                exchange_rules = self.client.leverage_brackets(signal.symbol)
+                sizing.update(max_leverage=max(row["initialLeverage"] for row in exchange_rules["brackets"]),
+                              max_leverage_source="Binance account/symbol leverage brackets",
+                              exchange_notional_leverage_brackets=exchange_rules)
             context = {**cfg.ai_trader_context(signal.portfolio),
                        **prior_context(store, signal.portfolio or store.active_trader(), now_ms(), symbol=signal.symbol),
+                       **sizing,
                        "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
                        "lead_execution_price": signal.price, "signal_age_seconds": (now_ms() - signal.time) // 1000,
                        "bid": bid, "ask": ask, "account_equity_usdt": equity, "current_side_notional_usdt": notional,
                        "minimum_order_notional_usdt": floor,
-                       "order_notional_fraction_limit": cfg.order_limit,
-                       "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": cfg.max_leverage,
-                       "symbol_notional_fraction_limit": cfg.symbol_limit,
-                       "gross_notional_fraction_limit": cfg.gross_limit, "margin_fraction_limit": cfg.margin_limit}
+                       "gross_notional_usdt": gross, "estimated_margin_usdt": margin,
+                       "available_balance_usdt": as_decimal(asset["availableBalance"]),
+                       "existing_leverage_policy": "retain the existing contract leverage for additions"}
             decision = self._model_decision(signal, context)
             if decision is WAITING_FOR_MODEL:
                 return WAITING_FOR_MODEL
@@ -308,18 +316,31 @@ class ExchangeAccount:
                 return f"AI skip: {reason}"
         else:
             fraction, leverage = cfg.fixed_margin * cfg.fixed_leverage, cfg.fixed_leverage
-        fraction = min(fraction, cfg.order_limit)
+        if limited:
+            fraction = min(fraction, cfg.order_limit)
+        exchange_cap = None
         if current:
             info = self.client.signed("/fapi/v1/symbolConfig", symbol=signal.symbol)
-            leverage = int(next(row for row in info if row["symbol"] == signal.symbol)["leverage"])
-        leverage = min(leverage, cfg.max_leverage) if not current else leverage
-        if not 1 <= leverage <= cfg.max_leverage:
-            return "existing contract leverage exceeds cap"
+            info = next(row for row in info if row["symbol"] == signal.symbol)
+            leverage = int(info["leverage"])
+            if not limited:
+                exchange_cap = as_decimal(info.get("maxNotionalValue"))
+                if exchange_cap <= 0:
+                    raise ServiceError("Binance contract notional limit unavailable")
+        leverage = min(leverage, cfg.max_leverage) if limited and not current else leverage
+        maximum = cfg.max_leverage if limited else max(row["initialLeverage"] for row in exchange_rules["brackets"])
+        if not 1 <= leverage <= maximum:
+            return "existing contract leverage exceeds cap" if limited else "杠杆超出币安合约允许范围"
         lot = rules["LOT_SIZE"]
         risk_price = max(limit, ask)
-        desired = min(equity * fraction, equity * cfg.symbol_limit - notional,
-                      equity * cfg.gross_limit - gross, (equity * cfg.margin_limit - margin) * leverage,
-                      min(wallet, as_decimal(asset["availableBalance"])) * leverage)
+        if limited:
+            desired = min(equity * fraction, equity * cfg.symbol_limit - notional,
+                          equity * cfg.gross_limit - gross, (equity * cfg.margin_limit - margin) * leverage,
+                          min(wallet, as_decimal(asset["availableBalance"])) * leverage)
+        else:
+            desired = min(equity * fraction, as_decimal(asset["availableBalance"]) / (ONE / leverage + cfg.fee))
+            if exchange_cap is not None:
+                desired = min(desired, exchange_cap - notional)
         quantity = rounded(min(desired / risk_price, as_decimal(lot["maxQty"])), as_decimal(lot["stepSize"]))
         if quantity < as_decimal(lot["minQty"]) or quantity * min(limit, bid) < floor:
             return f"剩余额度或本单金额低于最小下单量 · 合约最低名义金额 {floor:f}"
@@ -327,8 +348,17 @@ class ExchangeAccount:
             if not self.entry_enabled(store, signal):
                 return "entry expired or route changed"
             result = self.client.signed("/fapi/v1/leverage", "POST", symbol=signal.symbol, leverage=leverage)
-            if int(result["leverage"]) != leverage or quantity * risk_price > as_decimal(result["maxNotionalValue"]):
+            if int(result["leverage"]) != leverage:
                 return "Binance leverage or notional limit"
+            exchange_cap = as_decimal(result["maxNotionalValue"])
+            if exchange_cap <= 0:
+                raise ServiceError("Binance contract notional limit unavailable")
+            if limited and quantity * risk_price > exchange_cap:
+                return "Binance leverage or notional limit"
+            if not limited:
+                quantity = min(quantity, rounded(exchange_cap / risk_price, as_decimal(lot["stepSize"])))
+                if quantity < as_decimal(lot["minQty"]) or quantity * min(limit, bid) < floor:
+                    return "Binance notional headroom below minimum order"
         self._submit(store, signal, quantity, leverage, limit)
         return None
 

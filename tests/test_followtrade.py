@@ -107,6 +107,44 @@ class PaperTest(unittest.TestCase):
         cfg = load_config(path)
         self.assertEqual((cfg.order_limit, cfg.symbol_limit, cfg.gross_limit), (D(".08"), D(".45"), D("1.20")))
 
+    def test_ai_managed_positions_exceed_strategy_caps_and_preserve_available_margin(self):
+        cfg = replace(self.cfg, ai=AIConfig("https://example.test/v1", "test", "test", 60, "profile", False))
+        engine = PaperEngine(self.store, cfg)
+        for i, fraction in enumerate((D(".4"), D(12), D(1000))):
+            signal = observed(f"managed-{i}", at=NOW - 3000 + i * 1000)
+            self.store.ingest([signal], ("ai",), NOW)
+            engine.process("ai", signal, self.quotes, (fraction, 20, "AI"), NOW)
+            _, equity, gross, margin, _ = self.store.snapshot("ai")
+            self.assertLessEqual(margin.quantize(D(".00000001")), equity.quantize(D(".00000001")))
+            if i == 1:
+                self.assertGreater(gross, equity * cfg.gross_limit)
+                self.assertGreater(margin, equity * cfg.margin_limit)
+        self.assertEqual(self.store.positions("ai")[0]["leverage"], 20)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM fills WHERE account='ai'").fetchone()[0], 3)
+        context = engine.ai_context(observed("context"), self.quotes[SYMBOL], NOW)
+        self.assertFalse(context["position_limits_enabled"])
+        self.assertIsNone(context["order_notional_fraction_limit"])
+        self.assertIsNone(context["max_leverage"])
+        self.entry(observed("fixed"))
+        _, equity, gross, _, _ = self.store.snapshot("fixed")
+        self.assertLessEqual(gross, equity * cfg.order_limit)
+
+    def test_config_can_disable_ai_limits_and_use_demo_full_wallet(self):
+        path = self.cfg.database.with_suffix(".json")
+        path.write_text(json.dumps({"ai": {"enabled": True, "position_limits_enabled": False,
+            "base_url": "https://example.test/v1", "model": "test", "trader_profile": "profile"},
+            "execution": {"demo": {"strategy": "ai", "budget_usdt": None}}}), encoding="utf-8")
+        with patch.dict("os.environ", {"FOLLOWTRADE_AI_KEY": "test", "FOLLOWTRADE_BINANCE_DEMO_KEY": "key",
+                                       "FOLLOWTRADE_BINANCE_DEMO_SECRET": "secret"}):
+            cfg = load_config(path)
+        self.assertFalse(cfg.position_limits_enabled("ai"))
+        self.assertTrue(cfg.position_limits_enabled("fixed"))
+        self.assertIsNone(cfg.execution[0].budget)
+        bot = Telegram(TelegramConfig("123:fake", 1, True), risk_config=cfg)
+        reply = bot.handle_message(self.store, ("fixed",), (), "/mode", 0)
+        self.assertIn("策略上限已关闭", reply)
+        self.assertIn("固定盘保证金占用上限 40%", reply)
+
     def test_telegram_displays_effective_risk_limits(self):
         bot = Telegram(TelegramConfig("123:fake", 1, True), risk_config=self.cfg)
         reply = bot.handle_message(self.store, ("fixed",), (), "/mode", 0)
@@ -394,6 +432,20 @@ class ClientsTest(unittest.TestCase):
                 result = {"choices": [{"message": {"content": json.dumps(payload)}}]}
                 with patch("followtrade.clients.request_json", return_value=result):
                     self.assertEqual(model.decide(context)[:2], (expected, 5))
+
+    def test_ai_managed_model_has_no_old_fraction_or_125x_ceiling(self):
+        model = Model(AIConfig("https://example.test/v1", "test", "key", 60, "profile", False))
+        context = {"position_limits_enabled": False, "order_notional_fraction_limit": None, "max_leverage": 150}
+        payload = {"action": "follow", "order_notional_fraction": "25", "leverage": 150, "reason": "AI"}
+        response = {"choices": [{"message": {"content": json.dumps(payload)}}]}
+        with patch("followtrade.clients.request_json", return_value=response):
+            self.assertEqual(model.decide(context)[:2], (D(25), 150))
+        for field, bad in (("leverage", 151), ("leverage", 0), ("order_notional_fraction", "NaN"),
+                           ("order_notional_fraction", "Infinity"), ("order_notional_fraction", "-1")):
+            with self.subTest(field=field, value=bad):
+                response = {"choices": [{"message": {"content": json.dumps({**payload, field: bad})}}]}
+                with patch("followtrade.clients.request_json", return_value=response), self.assertRaises(ServiceError):
+                    model.decide(context)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ class AIConfig:
     token: str
     timeout: int
     profile: str
+    position_limits_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,20 @@ class Config:
             "lead_portfolio_id": portfolio,
             "trader_profile": "暂无这个交易员的专属画像。根据已观察成交、报价和账户限额判断。"
                               "带单员的实际仓位、保证金和设定杠杆未知。",
+        }
+
+    def position_limits_enabled(self, strategy):
+        return not (strategy == "ai" and self.ai is not None and not self.ai.position_limits_enabled)
+
+    def sizing_context(self, strategy):
+        limited = self.position_limits_enabled(strategy)
+        return {
+            "position_limits_enabled": limited,
+            "order_notional_fraction_limit": self.order_limit if limited else None,
+            "symbol_notional_fraction_limit": self.symbol_limit if limited else None,
+            "gross_notional_fraction_limit": self.gross_limit if limited else None,
+            "margin_fraction_limit": self.margin_limit if limited else None,
+            "max_leverage": self.max_leverage if limited else None,
         }
 
 
@@ -115,7 +130,8 @@ def load_config(path):
         if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise ConfigError("ai.base_url must be an HTTPS API base URL")
         ai = AIConfig(base_url.rstrip("/"), model, token,
-                      integer_setting(ai_raw, "timeout_seconds", 60, 1, 180), profile)
+                      integer_setting(ai_raw, "timeout_seconds", 60, 1, 180), profile,
+                      enabled(ai_raw, "position_limits_enabled", True))
     chat = tg_raw.get("chat_id")
     if chat is not None:
         token = os.getenv("FOLLOWTRADE_TELEGRAM_TOKEN", "")
@@ -147,7 +163,8 @@ def load_config(path):
         strategy = route.get("strategy", "ai" if ai else "fixed")
         if strategy not in ("fixed", "ai") or (strategy == "ai" and ai is None):
             raise ConfigError(f"invalid {mode} execution strategy")
-        budget = decimal_setting(route, "budget_usdt", "0", "1", "10000000") if mode == "demo" else None
+        budget = (decimal_setting(route, "budget_usdt", "0", "1", "10000000")
+                  if mode == "demo" and route.get("budget_usdt", "missing") is not None else None)
         entry_deviation = decimal_setting(route, "max_entry_deviation_fraction", deviation, "0", "0.25")
         execution.append(ExecutionAccount(mode, key, secret, budget, strategy, entry_deviation))
     return Config(

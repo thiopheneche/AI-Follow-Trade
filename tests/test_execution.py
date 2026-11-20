@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from followtrade.binance import BASE_URLS, ExecutionAccount, Futures
 from followtrade.clients import BinanceAPIError, Quote, ServiceError, Signal
 from followtrade.config import AIConfig, TelegramConfig, load_config
-from followtrade.execution import ExchangeAccount, choose_mode
+from followtrade.execution import ExchangeAccount, WAITING_FOR_MODEL, choose_mode
 from followtrade.store import Store, now_ms
 from followtrade.telegram import Telegram
 
@@ -170,6 +170,132 @@ class ExecutionTest(TestCase):
         self.trader.tick(self.store)
         self.assertEqual(len(self.orders), 2)
         self.assertLessEqual(D(self.orders[1]["quantity"]) * D(self.orders[1]["price"]), D(150))
+
+    def managed_ai(self):
+        self.trader.config = replace(self.cfg, ai=AIConfig("https://example.test/v1", "test", "key", 60, "profile", False))
+        self.trader.account = replace(self.trader.account, strategy="ai", budget=None)
+        self.client.leverage_brackets.return_value = {"symbol": SYMBOL, "notionalCoef": None,
+            "brackets": [{"initialLeverage": 150, "notionalFloor": D(0), "notionalCap": D(50000)}]}
+        choose_mode(self.store, self.cfg.execution, "demo")
+
+    def test_ai_managed_mu_sizing_is_not_clipped_by_old_percentages(self):
+        self.managed_ai()
+        self.client.signed.side_effect = lambda route, method="GET", **params: (
+            [{"symbol": SYMBOL, "leverage": 20, "maxNotionalValue": "50000"}] if route.endswith("/symbolConfig") else
+            self.exchange_request(route, method, **params))
+        for i, fraction in enumerate((".4", ".1", ".5", ".5", ".038")):
+            if self.orders:
+                owned = D(self.trader.owned(self.store)[SYMBOL]["quantity"])
+                self.set_position(owned)
+                self.asset["availableBalance"] = str(D(1000) - owned * 100 / 20)
+            signal = self.observe(f"managed-{i}")
+            self.trader.ai_result = signal.identity, (D(fraction), 20, "AI"), None
+            self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 5)
+        self.assertGreater(D(self.trader.owned(self.store)[SYMBOL]["quantity"]) * 100, D(1500))
+        self.assertGreater(D(self.orders[0]["quantity"]) * 100, D(390))
+        self.assertGreater(D(self.orders[2]["quantity"]) * 100, D(490))
+
+    def test_ai_managed_can_exceed_gross_margin_and_leverage_strategy_caps(self):
+        self.managed_ai()
+        signal = self.observe("large-managed-order")
+        self.trader.ai_result = signal.identity, (D(9), 20, "AI"), None
+        self.trader.tick(self.store)
+        notional = D(self.orders[0]["quantity"]) * D(self.orders[0]["price"])
+        self.assertGreater(notional, D(8900))
+        self.assertGreater(notional / 20, D(400))
+        self.assertEqual(self.store.db.execute("SELECT leverage FROM exchange_orders").fetchone()[0], 20)
+
+    def test_ai_managed_available_funds_and_exchange_notional_still_bind(self):
+        self.managed_ai()
+        self.asset["availableBalance"] = "100"
+        signal = self.observe("funds-bound")
+        self.trader.ai_result = signal.identity, (D(1000), 50, "AI"), None
+        self.trader.tick(self.store)
+        notional = D(self.orders[-1]["quantity"]) * D(self.orders[-1]["price"])
+        self.assertLessEqual(notional / 50 + notional * self.cfg.fee, D(100))
+        self.assertGreater(notional, D(4000))
+
+    def test_ai_managed_demo_uses_full_equity_without_old_budget_offset(self):
+        self.managed_ai()
+        self.asset.update(walletBalance="2000", availableBalance="2000")
+        with self.store.transaction():
+            self.store.put("execution.wallet_basis.demo", "500")
+        signal = self.observe("full-demo-wallet")
+        self.trader.ai_result = signal.identity, (D(".5"), 20, "AI"), None
+        self.trader.tick(self.store)
+        notional = D(self.orders[-1]["quantity"]) * D(self.orders[-1]["price"])
+        self.assertGreater(notional, D(990))
+        self.assertLessEqual(notional, D(1000))
+
+    def test_ai_managed_exchange_cap_reduces_order_and_preserves_price_guard(self):
+        self.managed_ai()
+        def signed(route, method="GET", **params):
+            if route.endswith("/leverage"):
+                return {"leverage": params["leverage"], "maxNotionalValue": "2000"}
+            return self.exchange_request(route, method, **params)
+        self.client.signed.side_effect = signed
+        signal = self.observe("exchange-cap")
+        self.trader.ai_result = signal.identity, (D(9), 20, "AI"), None
+        self.trader.tick(self.store)
+        self.assertLessEqual(D(self.orders[-1]["quantity"]) * D(self.orders[-1]["price"]), D(2000))
+        self.assertGreater(D(self.orders[-1]["quantity"]) * D(self.orders[-1]["price"]), D(1900))
+        self.set_position(self.orders[-1]["quantity"])
+        self.client.quote.return_value = D(101), D("101.01")
+        signal = self.observe("managed-outside-price")
+        self.trader.ai_result = signal.identity, (D(1), 20, "AI"), None
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+
+    def test_ai_managed_context_uses_exchange_limits_and_available_funds(self):
+        self.managed_ai()
+        signal = self.observe("managed-context")
+        self.trader._model_decision = Mock(return_value=WAITING_FOR_MODEL)
+        self.trader.tick(self.store)
+        context = self.trader._model_decision.call_args.args[1]
+        self.assertFalse(context["position_limits_enabled"])
+        for key in ("order_notional_fraction_limit", "symbol_notional_fraction_limit", "gross_notional_fraction_limit", "margin_fraction_limit"):
+            self.assertIsNone(context[key])
+        self.assertEqual(context["max_leverage"], 150)
+        self.assertEqual(context["available_balance_usdt"], D(1000))
+        self.assertEqual(self.orders, [])
+
+    def test_ai_managed_existing_exchange_headroom_and_daily_stop_still_bind(self):
+        self.managed_ai()
+        initial = self.observe("owned-managed")
+        self.trader.ai_result = initial.identity, (D(1), 20, "AI"), None
+        self.trader.tick(self.store)
+        qty = self.orders[-1]["quantity"]
+        self.set_position(qty)
+        actual_notional = D(qty) * 100
+        self.client.signed.side_effect = lambda route, method="GET", **params: (
+            [{"symbol": SYMBOL, "leverage": 20, "maxNotionalValue": str(actual_notional)}]
+            if route.endswith("/symbolConfig") else self.exchange_request(route, method, **params))
+        addition = self.observe("no-exchange-headroom")
+        self.trader.ai_result = addition.identity, (D(1), 20, "AI"), None
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+        signal = self.observe("daily-guard")
+        result = self.trader._entry(self.store, signal, self.asset, {}, {}, D(1000), D(1000), True)
+        self.assertEqual(result, "daily loss guard")
+        self.assertEqual(len(self.orders), 1)
+
+    def test_leverage_brackets_are_validated_and_cached_per_account(self):
+        client = Futures("demo", "key", "secret")
+        payload = {"symbol": SYMBOL, "notionalCoef": "1.5", "brackets": [
+            {"initialLeverage": 150, "notionalFloor": "0", "notionalCap": "50000"}]}
+        with patch.object(client, "signed", return_value=[payload]) as api:
+            first = client.leverage_brackets(SYMBOL)
+            self.assertEqual(first, client.leverage_brackets(SYMBOL))
+            api.assert_called_once_with("/fapi/v1/leverageBracket", symbol=SYMBOL)
+        self.assertEqual(first["brackets"][0]["initialLeverage"], 150)
+        self.assertEqual(first["notionalCoef"], "1.5")
+        for bad in ({**payload, "symbol": "OTHERUSDT"}, {**payload, "brackets": []},
+                    {**payload, "brackets": [{"initialLeverage": 0, "notionalFloor": 0, "notionalCap": 10}]}):
+            with self.subTest(payload=bad), patch.object(client, "signed", return_value=bad):
+                client.brackets.clear()
+                with self.assertRaises(ServiceError):
+                    client.leverage_brackets(SYMBOL)
 
     def test_demo_deviation_override_accepts_prices_within_its_own_limit(self):
         choose_mode(self.store, self.cfg.execution, "demo")

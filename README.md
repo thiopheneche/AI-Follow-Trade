@@ -41,7 +41,9 @@
 
 `max_entry_deviation_fraction` 设置相对带单成交价的不利入场价差上限。可在 `execution.demo` 或 `execution.mainnet` 下单独设置。用 `/mode` 查看各币安账户的生效值。
 
-`order_notional_fraction` 限制每笔开仓和加仓的名义金额，默认占权益的 15%。单标的累计上限为 60%，全账户为 300%，实际委托同时受保证金和可用余额约束。
+AI 的 `ai.position_limits_enabled` 设为 `false` 时，开仓金额和新仓杠杆由模型判断，取消额外的单笔、单标的、总敞口、保证金占用及杠杆上限。程序读取币安合约档位，按实际可用保证金和交易规则执行；已有仓位加仓沿用当前合约杠杆，价格保护和止损继续生效。
+
+固定策略仍使用 `order_notional_fraction` 等限额：单笔 15%、单标的 60%、全账户 300%、保证金 40%。将 `ai.position_limits_enabled` 设为 `true` 可让 AI 同样使用这些限额。Demo 的 `execution.demo.budget_usdt` 设为 `null` 时按账户实际权益计算。
 
 AI 可读取按交易员 ID 缓存的历史仓位先验，包括历史杠杆、首仓和加仓占该轮峰值数量的比例。先验缺失或超过 7 天时不使用，历史数据不会替代现有仓位限制。采集并写入正在使用的数据库：
 
