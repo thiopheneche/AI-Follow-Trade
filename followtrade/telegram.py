@@ -141,8 +141,9 @@ def binance_position_status(store, accounts):
 
 
 class Telegram:
-    def __init__(self, config):
+    def __init__(self, config, *, risk_config=None):
         self.config = config
+        self.risk_config = risk_config
         self.next_send = 0
 
     def call(self, method, body, timeout=8):
@@ -287,7 +288,13 @@ class Telegram:
                 store.put("telegram.trader_input_until", now + COMMAND_MAX_AGE_MS)
             return self.trader_status(store) + "\n请在 5 分钟内发送组合 ID 或带单详情链接。也可以直接发送 /trader <ID>。"
         if command != "/trader" and not taking_input:
-            return self.reply(store, accounts, command, execution, argument=argument)
+            reply = self.reply(store, accounts, command, execution, argument=argument)
+            if command in ("/mode", "/status") and self.risk_config is not None:
+                cfg = self.risk_config
+                reply += (f"\n仓位限额（名义金额／权益）· 单笔 {cfg.order_limit:.0%} · "
+                          f"单标的 {cfg.symbol_limit:.0%} · 全账户 {cfg.gross_limit:.0%}"
+                          f"\n保证金占用上限 {cfg.margin_limit:.0%}")
+            return reply
         value = text.strip() if taking_input else argument
         cancel = value.lower() == "cancel"
         if not cancel:

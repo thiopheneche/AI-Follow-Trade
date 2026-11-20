@@ -201,7 +201,9 @@ AI_SYSTEM_PROMPT = (
     '(decimal string for the incremental order notional divided by current account equity), '
     '"leverage" (integer), and "reason" (short Chinese text). If the account already holds this side, '
     'size only the addition and include existing exposure when checking the limits. Existing leverage '
-    'is retained. Skip if the allowable addition is below the minimum order notional. '
+    'is retained. Each order must respect order_notional_fraction_limit, the maximum incremental '
+    'notional divided by equity. Leave room for subsequent additions within the symbol limit. '
+    'Skip if the allowable addition is below the minimum order notional. '
     'Use skip when the evidence or liquidity is insufficient.'
 )
 
@@ -244,6 +246,11 @@ class Model:
             leverage = output.get("leverage")
             if fraction is None or not 0 < fraction <= 20 or type(leverage) is not int or not 1 <= leverage <= 125:
                 raise ValueError
+            if "order_notional_fraction_limit" in context:
+                order_limit = decimal(context["order_notional_fraction_limit"])
+                if order_limit is None or not 0 < order_limit <= 20:
+                    raise ValueError
+                fraction = min(fraction, order_limit)
             return fraction, leverage, reason[:240]
         except (TypeError, ValueError, KeyError, IndexError, ProbeError):
             raise ServiceError("model API: invalid decision") from None

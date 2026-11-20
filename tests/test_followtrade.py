@@ -72,15 +72,18 @@ class PaperTest(unittest.TestCase):
         self.assertEqual(self.store.pending("fixed"), [])
 
     def test_fixed_follow_adds_to_an_existing_position_within_exposure_cap(self):
-        self.entry(observed("open", at=NOW - 4000))
+        self.entry(observed("open", at=NOW - 5000))
         initial = D(self.store.positions("fixed")[0]["qty"])
-        self.entry(observed("add", at=NOW - 3000))
+        self.entry(observed("add", at=NOW - 4000))
         self.assertGreater(D(self.store.positions("fixed")[0]["qty"]), initial)
+        self.entry(observed("second-add", at=NOW - 3000))
         self.entry(observed("last-add", at=NOW - 2000))
         self.entry(observed("over-cap", at=NOW - 1000))
         _, equity, gross, _, _ = self.store.snapshot("fixed")
-        self.assertLessEqual(gross, equity * self.cfg.symbol_limit)
-        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM fills WHERE action=?", ("加仓",)).fetchone()[0], 2)
+        self.assertLessEqual(gross.quantize(D(".00000001")),
+                             (equity * self.cfg.symbol_limit).quantize(D(".00000001")))
+        self.assertGreater(gross, equity * D(".59"))
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM fills WHERE action=?", ("加仓",)).fetchone()[0], 3)
 
     def test_ai_caps_leverage_and_notional(self):
         signal = observed("ai")
@@ -88,10 +91,27 @@ class PaperTest(unittest.TestCase):
         self.engine.process("ai", signal, self.quotes, (D(10), 100, "ai"), NOW)
         _, equity, gross, margin, positions = self.store.snapshot("ai")
         self.assertEqual(positions[0][0]["leverage"], self.cfg.max_leverage)
+        self.assertLessEqual(gross, equity * self.cfg.order_limit)
         self.assertLessEqual(gross, equity * self.cfg.symbol_limit)
         self.assertLessEqual(margin, equity * self.cfg.margin_limit)
         self.assertIn(SYMBOL, Telegram.reply(self.store, ("ai",), "/positions"))
         self.assertIn("10x", Telegram.reply(self.store, ("ai",), "/trades"))
+
+    def test_risk_defaults_and_explicit_settings_are_loaded(self):
+        path = self.cfg.database.with_suffix(".json")
+        path.write_text("{}", encoding="utf-8")
+        cfg = load_config(path)
+        self.assertEqual((cfg.order_limit, cfg.symbol_limit, cfg.gross_limit), (D(".15"), D(".60"), D("3")))
+        path.write_text(json.dumps({"order_notional_fraction": ".08", "symbol_notional_fraction": ".45",
+                                    "gross_notional_fraction": "1.20"}), encoding="utf-8")
+        cfg = load_config(path)
+        self.assertEqual((cfg.order_limit, cfg.symbol_limit, cfg.gross_limit), (D(".08"), D(".45"), D("1.20")))
+
+    def test_telegram_displays_effective_risk_limits(self):
+        bot = Telegram(TelegramConfig("123:fake", 1, True), risk_config=self.cfg)
+        reply = bot.handle_message(self.store, ("fixed",), (), "/mode", 0)
+        self.assertIn("单笔 15% · 单标的 60% · 全账户 300%", reply)
+        self.assertIn("保证金占用上限 40%", reply)
 
     def test_stale_and_already_closed_signals_do_not_enter(self):
         self.entry(observed("stale", at=NOW - 301_000))
@@ -363,6 +383,17 @@ class ClientsTest(unittest.TestCase):
                 result = {"choices": [{"message": {"content": json.dumps(payload)}}]}
                 with patch("followtrade.clients.request_json", return_value=result):
                     self.assertEqual(model.decide(context)[0], expected)
+
+    def test_model_caps_incremental_order_without_subtracting_existing_exposure(self):
+        model = Model(AIConfig("https://example.test/v1", "test", "test-key", 5, "profile"))
+        context = {"account_equity_usdt": "1000", "current_side_notional_usdt": "300",
+                   "order_notional_fraction_limit": ".15"}
+        for fraction, expected in ((".60", D(".15")), (".10", D(".10"))):
+            with self.subTest(fraction=fraction):
+                payload = {"action": "follow", "order_notional_fraction": fraction, "leverage": 5, "reason": "加仓"}
+                result = {"choices": [{"message": {"content": json.dumps(payload)}}]}
+                with patch("followtrade.clients.request_json", return_value=result):
+                    self.assertEqual(model.decide(context)[:2], (expected, 5))
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@
 
 `max_entry_deviation_fraction` 设置相对带单成交价的不利入场价差上限。可在 `execution.demo` 或 `execution.mainnet` 下单独设置。用 `/mode` 查看各币安账户的生效值。
 
+`order_notional_fraction` 限制每笔开仓和加仓的名义金额，默认占权益的 15%。单标的累计上限为 60%，全账户为 300%，实际委托同时受保证金和可用余额约束。
+
 ## 测试
 
 ```sh

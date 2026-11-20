@@ -294,6 +294,7 @@ class ExchangeAccount:
                        "lead_execution_price": signal.price, "signal_age_seconds": (now_ms() - signal.time) // 1000,
                        "bid": bid, "ask": ask, "account_equity_usdt": equity, "current_side_notional_usdt": notional,
                        "minimum_order_notional_usdt": floor,
+                       "order_notional_fraction_limit": cfg.order_limit,
                        "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": cfg.max_leverage,
                        "symbol_notional_fraction_limit": cfg.symbol_limit,
                        "gross_notional_fraction_limit": cfg.gross_limit, "margin_fraction_limit": cfg.margin_limit}
@@ -305,6 +306,7 @@ class ExchangeAccount:
                 return f"AI skip: {reason}"
         else:
             fraction, leverage = cfg.fixed_margin * cfg.fixed_leverage, cfg.fixed_leverage
+        fraction = min(fraction, cfg.order_limit)
         if current:
             info = self.client.signed("/fapi/v1/symbolConfig", symbol=signal.symbol)
             leverage = int(next(row for row in info if row["symbol"] == signal.symbol)["leverage"])

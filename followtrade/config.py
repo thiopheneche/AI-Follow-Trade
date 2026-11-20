@@ -54,6 +54,7 @@ class Config:
     telegram: TelegramConfig = None
     execution: tuple = ()
     local_ai_enabled: bool = True
+    order_limit: Decimal = Decimal("0.15")
 
     @property
     def paper_accounts(self):
@@ -154,8 +155,8 @@ def load_config(path):
         integer_setting(raw, "poll_seconds", 30, 5, 300),
         integer_setting(raw, "max_signal_age_seconds", 300, 15, 300),
         decimal_setting(raw, "fixed_margin_fraction", "0.05", "0.0001", "1"), fixed, ceiling,
-        decimal_setting(raw, "symbol_notional_fraction", "0.45", "0.0001", "20"),
-        decimal_setting(raw, "gross_notional_fraction", "1.20", "0.0001", "20"),
+        decimal_setting(raw, "symbol_notional_fraction", "0.60", "0.0001", "20"),
+        decimal_setting(raw, "gross_notional_fraction", "3.00", "0.0001", "20"),
         decimal_setting(raw, "margin_fraction", "0.40", "0.0001", "1"),
         deviation,
         decimal_setting(raw, "estimated_taker_fee_fraction", "0.0005", "0", "0.05"), slip,
@@ -163,4 +164,5 @@ def load_config(path):
         decimal_setting(raw, "daily_loss_fraction", "0.05", "0.0001", "1"),
         decimal_setting(raw, "position_stop_fraction", "0.05", "0.0001", "0.99"), ai, telegram, tuple(execution),
         local_ai_enabled=enabled(ai_raw, "local_paper_enabled", True),
+        order_limit=decimal_setting(raw, "order_notional_fraction", "0.15", "0.0001", "20"),
     )

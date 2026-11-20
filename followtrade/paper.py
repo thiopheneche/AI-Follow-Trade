@@ -21,6 +21,7 @@ class PaperEngine:
 
     def _entry(self, account, signal, quote, fraction, leverage, reason, now):
         db, cfg = self.store.db, self.config
+        fraction = min(fraction, cfg.order_limit)
         cash, equity, gross, margin, details = self.store.snapshot(account)
         if any(not -5000 <= now - row[4] <= QUOTE_MAX_AGE_MS for row in details):
             return "account quotes stale"
@@ -211,6 +212,7 @@ class PaperEngine:
             "bid": quote.bid, "ask": quote.ask, "account_equity_usdt": equity,
             "current_side_notional_usdt": pos[0][1] * pos[0][3] if pos else ZERO,
             "minimum_order_notional_usdt": self.config.minimum,
+            "order_notional_fraction_limit": self.config.order_limit,
             "gross_notional_usdt": gross, "estimated_margin_usdt": margin, "max_leverage": self.config.max_leverage,
             "symbol_notional_fraction_limit": self.config.symbol_limit,
             "gross_notional_fraction_limit": self.config.gross_limit, "margin_fraction_limit": self.config.margin_limit,

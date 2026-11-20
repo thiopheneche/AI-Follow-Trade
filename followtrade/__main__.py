@@ -328,7 +328,8 @@ def main():
             store.put("service.first_start", now_ms())
     telegram = None
     if cfg.telegram:
-        telegram = threading.Thread(target=Telegram(cfg.telegram).serve, args=(cfg, accounts, stop), daemon=True)
+        telegram = threading.Thread(target=Telegram(cfg.telegram, risk_config=cfg).serve,
+                                    args=(cfg, accounts, stop), daemon=True)
         telegram.start()
     model_workers = int("ai" in accounts) + sum(account.strategy == "ai" for account in cfg.execution)
     model_pool = ThreadPoolExecutor(max_workers=model_workers) if model_workers else None

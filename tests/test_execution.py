@@ -55,9 +55,9 @@ class ExecutionTest(TestCase):
         return {"status": status, "executedQty": executed, "avgPrice": "100",
                 "clientOrderId": params["newClientOrderId"], "symbol": params["symbol"], "side": params["side"]}
 
-    def observe(self, identity, action="increase", opened=0):
+    def observe(self, identity, action="increase", opened=0, symbol=SYMBOL):
         stamp = now_ms()
-        signal = Signal(identity, stamp, SYMBOL, "LONG", action, D(10), D(100), opened)
+        signal = Signal(identity, stamp, symbol, "LONG", action, D(10), D(100), opened)
         self.store.ingest([signal], ("fixed",), stamp, progress={"orders.last_end": stamp, "feed_status": "正常"},
                           execution_modes=self.modes)
         return signal
@@ -119,6 +119,57 @@ class ExecutionTest(TestCase):
         reply = Telegram.reply(self.store, ("fixed",), "/orders", self.cfg.execution)
         self.assertIn("未下单", reply)
         self.assertIn("价格超出入场范围 · 带单成交价 100 · 可成交报价 101.01 · 限价 100.50", reply)
+
+    def test_capped_orders_allow_repeated_additions_and_three_times_gross_exposure(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.trader.config = replace(self.cfg, fixed_leverage=10, deviation=D(0))
+        self.client.quote.return_value = D(100), D(100)
+        self.client.signed.side_effect = lambda route, method="GET", **params: (
+            [{"symbol": params["symbol"], "leverage": 10}] if route.endswith("/symbolConfig") else
+            self.exchange_request(route, method, **params)
+        )
+
+        def refresh_positions():
+            self.client.account.return_value = self.asset, [
+                {"symbol": row["symbol"], "positionAmt": row["quantity"], "positionSide": "BOTH",
+                 "entryPrice": "100", "markPrice": "100", "notional": str(D(row["quantity"]) * 100),
+                 "initialMargin": str(D(row["quantity"]) * 10)}
+                for row in self.trader.owned(self.store).values()
+            ]
+
+        for symbol in (SYMBOL, "BTCUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"):
+            for addition in range(5):
+                with self.subTest(symbol=symbol, addition=addition):
+                    refresh_positions()
+                    self.observe(f"{symbol}-{addition}", symbol=symbol)
+                    self.trader.tick(self.store)
+            self.assertEqual(D(self.trader.owned(self.store)[symbol]["quantity"]) * 100, D(600))
+        self.assertEqual(len(self.orders), 20)
+        self.assertTrue(all(D(order["quantity"]) * 100 == D(150) for order in self.orders))
+        self.assertEqual(sum((D(row["quantity"]) * 100 for row in self.trader.owned(self.store).values()), D(0)), D(3000))
+        refresh_positions()
+        self.observe("gross-limit", symbol="ADAUSDT")
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 20)
+
+    def test_execution_caps_ai_order_even_if_model_exceeds_the_limit(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.trader.account = replace(self.trader.account, strategy="ai")
+        signal = self.observe("oversized-ai")
+        self.trader.ai_result = signal.identity, (D(".60"), 10, "跟随"), None
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+        self.assertLessEqual(D(self.orders[0]["quantity"]) * D(self.orders[0]["price"]), D(150))
+        self.set_position(self.orders[-1]["quantity"])
+        self.client.signed.side_effect = lambda route, method="GET", **params: (
+            [{"symbol": SYMBOL, "leverage": 10}] if route.endswith("/symbolConfig") else
+            self.exchange_request(route, method, **params)
+        )
+        signal = self.observe("oversized-ai-add")
+        self.trader.ai_result = signal.identity, (D(".60"), 3, "继续加仓"), None
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 2)
+        self.assertLessEqual(D(self.orders[1]["quantity"]) * D(self.orders[1]["price"]), D(150))
 
     def test_demo_deviation_override_accepts_prices_within_its_own_limit(self):
         choose_mode(self.store, self.cfg.execution, "demo")
