@@ -82,13 +82,14 @@ def order_signal(row):
 
 
 class BinanceFeed:
-    def __init__(self, portfolio):
+    def __init__(self, portfolio, *, observer=None):
         self.portfolio = portfolio
+        self.observer = observer
 
     def _fetch(self, route, body):
         def read():
             return fetch(self.portfolio, "lead-portfolio/" + route, body,
-                         observer=lambda *_args, **_fields: None)[0]
+                         observer=self.observer or (lambda *_args, **_fields: None))[0]
 
         try:
             return read()
@@ -204,6 +205,11 @@ AI_SYSTEM_PROMPT = (
     'is retained. Each order must respect order_notional_fraction_limit, the maximum incremental '
     'notional divided by equity. Leave room for subsequent additions within the symbol limit. '
     'Skip if the allowable addition is below the minimum order notional. '
+    'lead_trader_sizing_prior is descriptive historical data, not a sizing instruction. '
+    'Its quantity fractions use the source cycle peak quantity as denominator, never account equity. '
+    'Do not use a collected balance or AUM as historical equity; unavailable account exposure stays unknown. '
+    'Historical reported leverage is not verified opening-time or current contract leverage. '
+    'Prefer the recent and signal-symbol samples, account for small sample sizes, and obey all account limits. '
     'Use skip when the evidence or liquidity is insufficient.'
 )
 

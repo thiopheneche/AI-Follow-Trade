@@ -9,6 +9,7 @@ import time
 from .ai_decision import format_ai_decision
 from .binance import Futures, MODE_LABELS, as_decimal, rounded
 from .clients import BinanceAPIError, Model, ServiceError, Signal
+from .prior import prior_context
 from .store import Store, now_ms, utc_day
 
 
@@ -290,6 +291,7 @@ class ExchangeAccount:
         floor = max(cfg.minimum, as_decimal(rules["MIN_NOTIONAL"]["notional"]))
         if self.account.strategy == "ai":
             context = {**cfg.ai_trader_context(signal.portfolio),
+                       **prior_context(store, signal.portfolio or store.active_trader(), now_ms(), symbol=signal.symbol),
                        "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
                        "lead_execution_price": signal.price, "signal_age_seconds": (now_ms() - signal.time) // 1000,
                        "bid": bid, "ask": ask, "account_equity_usdt": equity, "current_side_notional_usdt": notional,

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from .clients import ServiceError
+from .prior import prior_context
 from .store import utc_day
 
 
@@ -207,6 +208,7 @@ class PaperEngine:
         pos = [row for row in details if row[0]["symbol"] == signal.symbol and row[0]["leg"] == signal.leg]
         return {
             **self.config.ai_trader_context(signal.portfolio),
+            **prior_context(self.store, signal.portfolio or self.store.active_trader(), now, symbol=signal.symbol),
             "symbol": signal.symbol, "direction": signal.leg, "lead_reported_qty": signal.quantity,
             "lead_execution_price": signal.price, "signal_age_seconds": (now - signal.time) // 1000,
             "bid": quote.bid, "ask": quote.ask, "account_equity_usdt": equity,

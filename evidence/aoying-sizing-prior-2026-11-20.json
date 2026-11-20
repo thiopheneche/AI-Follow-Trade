@@ -1,0 +1,348 @@
+{
+  "schemaVersion": 1,
+  "portfolioId": "5075281354358777856",
+  "traderName": "熬鹰资本",
+  "collectedAtMs": 1795181636449,
+  "collectedAt": "2026-11-20T13:33:56.449+00:00",
+  "snapshotAtCollection": {
+    "marginBalanceUsdt": "500.29211570",
+    "positionVisibility": "hidden",
+    "positionExposureRatios": null,
+    "accountGrossExposureFraction": null,
+    "observedAt": "2026-11-20T13:31:38.585+00:00",
+    "isLive": false
+  },
+  "historicalAccountExposureFractions": null,
+  "history": {
+    "rows": 110,
+    "totalReported": 110,
+    "complete": true,
+    "firstOpenedAtMs": 1784699288285,
+    "lastClosedAtMs": 1795016431494,
+    "all": {
+      "closedCycles": 110,
+      "reportedLeverage": {
+        "count": 110,
+        "p10": "2",
+        "median": "5",
+        "p90": "10",
+        "max": "20"
+      },
+      "leverageCounts": {
+        "1": 3,
+        "2": 24,
+        "3": 18,
+        "4": 8,
+        "5": 27,
+        "6": 3,
+        "10": 20,
+        "15": 4,
+        "20": 3
+      },
+      "marginModeCounts": {
+        "CROSS": 110
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 110,
+        "p10": "199079.65394046",
+        "median": "704353.17515971",
+        "p90": "4212680.37833073",
+        "max": "14169356.43780472"
+      }
+    },
+    "recent30Days": {
+      "closedCycles": 27,
+      "reportedLeverage": {
+        "count": 27,
+        "p10": "2",
+        "median": "5",
+        "p90": "12",
+        "max": "20"
+      },
+      "leverageCounts": {
+        "1": 1,
+        "2": 3,
+        "3": 4,
+        "4": 1,
+        "5": 6,
+        "10": 9,
+        "15": 1,
+        "20": 2
+      },
+      "marginModeCounts": {
+        "CROSS": 27
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 27,
+        "p10": "300095.62524805",
+        "median": "1010527.96119995",
+        "p90": "9917199.49676577",
+        "max": "14169356.43780472"
+      }
+    }
+  },
+  "bySymbolRecent30Days": {
+    "BTCUSDT": {
+      "closedCycles": 6,
+      "reportedLeverage": {
+        "count": 6,
+        "p10": "5",
+        "median": "10",
+        "p90": "10",
+        "max": "10"
+      },
+      "leverageCounts": {
+        "5": 2,
+        "10": 4
+      },
+      "marginModeCounts": {
+        "CROSS": 6
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 6,
+        "p10": "874427.96459998",
+        "median": "1400904.80614999",
+        "p90": "4875931.01315026",
+        "max": "7943566.28010045"
+      }
+    },
+    "ETHUSDT": {
+      "closedCycles": 8,
+      "reportedLeverage": {
+        "count": 8,
+        "p10": "5",
+        "median": "10",
+        "p90": "20",
+        "max": "20"
+      },
+      "leverageCounts": {
+        "5": 2,
+        "10": 3,
+        "15": 1,
+        "20": 2
+      },
+      "marginModeCounts": {
+        "CROSS": 8
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 8,
+        "p10": "668101.26862987",
+        "median": "6639500.47726886",
+        "p90": "12704155.39950533",
+        "max": "14169356.43780472"
+      }
+    },
+    "HYPEUSDT": {
+      "closedCycles": 1,
+      "reportedLeverage": {
+        "count": 1,
+        "p10": "5",
+        "median": "5",
+        "p90": "5",
+        "max": "5"
+      },
+      "leverageCounts": {
+        "5": 1
+      },
+      "marginModeCounts": {
+        "CROSS": 1
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 1,
+        "p10": "2748419.49590592",
+        "median": "2748419.49590592",
+        "p90": "2748419.49590592",
+        "max": "2748419.49590592"
+      }
+    },
+    "MUUSDT": {
+      "closedCycles": 2,
+      "reportedLeverage": {
+        "count": 2,
+        "p10": "1.4",
+        "median": "3",
+        "p90": "4.6",
+        "max": "5"
+      },
+      "leverageCounts": {
+        "1": 1,
+        "5": 1
+      },
+      "marginModeCounts": {
+        "CROSS": 2
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 2,
+        "p10": "845222.17222695",
+        "median": "2705675.94554318",
+        "p90": "4566129.7188594",
+        "max": "5031243.16218846"
+      }
+    },
+    "NVDAUSDT": {
+      "closedCycles": 3,
+      "reportedLeverage": {
+        "count": 3,
+        "p10": "2.2",
+        "median": "3",
+        "p90": "3",
+        "max": "3"
+      },
+      "leverageCounts": {
+        "2": 1,
+        "3": 2
+      },
+      "marginModeCounts": {
+        "CROSS": 3
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 3,
+        "p10": "627299.45309825",
+        "median": "694035.84071989",
+        "p90": "710543.57582359",
+        "max": "714670.50959952"
+      }
+    },
+    "SKHYNIXUSDT": {
+      "closedCycles": 2,
+      "reportedLeverage": {
+        "count": 2,
+        "p10": "2.1",
+        "median": "2.5",
+        "p90": "2.9",
+        "max": "3"
+      },
+      "leverageCounts": {
+        "2": 1,
+        "3": 1
+      },
+      "marginModeCounts": {
+        "CROSS": 2
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 2,
+        "p10": "210012.0184402",
+        "median": "250004.16219967",
+        "p90": "289996.30595913",
+        "max": "299994.34189899"
+      }
+    },
+    "SNDKUSDT": {
+      "closedCycles": 2,
+      "reportedLeverage": {
+        "count": 2,
+        "p10": "2.1",
+        "median": "2.5",
+        "p90": "2.9",
+        "max": "3"
+      },
+      "leverageCounts": {
+        "2": 1,
+        "3": 1
+      },
+      "marginModeCounts": {
+        "CROSS": 2
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 2,
+        "p10": "1027004.49869842",
+        "median": "2542305.49909174",
+        "p90": "4057606.49948506",
+        "max": "4436431.74958338"
+      }
+    },
+    "SPCXUSDT": {
+      "closedCycles": 1,
+      "reportedLeverage": {
+        "count": 1,
+        "p10": "4",
+        "median": "4",
+        "p90": "4",
+        "max": "4"
+      },
+      "leverageCounts": {
+        "4": 1
+      },
+      "marginModeCounts": {
+        "CROSS": 1
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 1,
+        "p10": "199957.43999607",
+        "median": "199957.43999607",
+        "p90": "199957.43999607",
+        "max": "199957.43999607"
+      }
+    },
+    "ZECUSDT": {
+      "closedCycles": 2,
+      "reportedLeverage": {
+        "count": 2,
+        "p10": "10",
+        "median": "10",
+        "p90": "10",
+        "max": "10"
+      },
+      "leverageCounts": {
+        "10": 2
+      },
+      "marginModeCounts": {
+        "CROSS": 2
+      },
+      "cyclePeakCostNotionalProxyUsdt": {
+        "count": 2,
+        "p10": "310138.74260076",
+        "median": "350041.12308074",
+        "p90": "389943.50356073",
+        "max": "399919.09868073"
+      }
+    }
+  },
+  "executionStyle": {
+    "orderWindow": {
+      "startTime": 1794576836405,
+      "endTime": 1795181636405,
+      "complete": true,
+      "signals": 41
+    },
+    "uniqueOrders": 41,
+    "reconciledClosedCycles": 8,
+    "cyclesWithAdditions": 8,
+    "initialQuantityFractionOfCyclePeak": {
+      "count": 8,
+      "p10": "0.13759629",
+      "median": "0.33303318",
+      "p90": "0.51136347",
+      "max": "0.52724612"
+    },
+    "additionQuantityFractionOfCyclePeak": {
+      "count": 20,
+      "p10": "0.13395107",
+      "median": "0.28630988",
+      "p90": "0.42875569",
+      "max": "0.49544338"
+    },
+    "increaseOrdersPerCycle": {
+      "count": 8,
+      "p10": "2",
+      "median": "4",
+      "p90": "4.3",
+      "max": "5"
+    }
+  },
+  "sources": {
+    "baseUrl": "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/",
+    "balance": "GET lead-portfolio/detail: data.marginBalance (USDT)",
+    "historicalLeverage": "POST lead-portfolio/position-history: data.list[].leverage",
+    "peakCostNotionalProxy": "data.list[].avgCost * data.list[].maxOpenInterest; cost-based proxy, not peak mark notional",
+    "orderSizing": "POST lead-portfolio/order-history: executedQty, side, positionSide, orderTime, orderUpdateTime"
+  },
+  "limitations": [
+    "历史账户仓位比例未知：缺少与历史仓位同期的账户权益，不能用本次余额或 AUM 代替。",
+    "首仓/加仓比例以该轮峰值持仓数量为分母，不是账户权益比例，也不是模型建议仓位。",
+    "历史杠杆是查询时的仓位历史字段，不能视为开仓瞬间或当前未平仓合约的设定杠杆。",
+    "峰值数量乘平均成本只是成本名义金额估算，不能把多轮峰值相加当作同时持仓。",
+    "加仓指同轮内后续增加数量的订单；多个订单可能属于同一交易意图。",
+    "样本仅覆盖公开可见历史；缺失、不完整或无法对齐的交易轮次不参与首仓/加仓比例统计。"
+  ]
+}

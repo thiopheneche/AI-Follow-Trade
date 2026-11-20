@@ -43,6 +43,14 @@
 
 `order_notional_fraction` 限制每笔开仓和加仓的名义金额，默认占权益的 15%。单标的累计上限为 60%，全账户为 300%，实际委托同时受保证金和可用余额约束。
 
+AI 可读取按交易员 ID 缓存的历史仓位先验，包括历史杠杆、首仓和加仓占该轮峰值数量的比例。先验缺失或超过 7 天时不使用，历史数据不会替代现有仓位限制。采集并写入正在使用的数据库：
+
+```sh
+python -m followtrade.prior <portfolioId> --database /path/to/state.sqlite3 --raw public-evidence.json --output sizing-prior.json
+```
+
+只有数量能够完整对齐的已平仓轮次参与首仓和加仓统计。缺少同期权益时，账户仓位比例保持未知。
+
 ## 测试
 
 ```sh
