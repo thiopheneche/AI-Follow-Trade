@@ -56,6 +56,11 @@ class Config:
     execution: tuple = ()
     local_ai_enabled: bool = True
     order_limit: Decimal = Decimal("0.15")
+    exit_policy: str = "protected"
+
+    @property
+    def protective_exits_enabled(self):
+        return self.exit_policy == "protected"
 
     @property
     def paper_accounts(self):
@@ -147,6 +152,9 @@ def load_config(path):
     ceiling = integer_setting(raw, "max_leverage", 10, 1, 125)
     if fixed > ceiling:
         raise ConfigError("fixed_leverage exceeds max_leverage")
+    exit_policy = raw.get("exit_policy", "protected")
+    if exit_policy not in ("protected", "leader_only"):
+        raise ConfigError("exit_policy must be protected or leader_only")
     slip = decimal_setting(raw, "extra_slippage_fraction", "0.0005", "0", "0.1")
     deviation = decimal_setting(raw, "max_entry_deviation_fraction", "0.005", "0", "0.25")
     execution = []
@@ -182,4 +190,5 @@ def load_config(path):
         decimal_setting(raw, "position_stop_fraction", "0.05", "0.0001", "0.99"), ai, telegram, tuple(execution),
         local_ai_enabled=enabled(ai_raw, "local_paper_enabled", True),
         order_limit=decimal_setting(raw, "order_notional_fraction", "0.15", "0.0001", "20"),
+        exit_policy=exit_policy,
     )

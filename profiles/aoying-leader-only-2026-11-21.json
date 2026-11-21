@@ -1,0 +1,802 @@
+{
+  "portfolioId": "5075281354358777856",
+  "version": "2026-11-21-leader-only-exits",
+  "trader_profile": "熬鹰资本（portfolioId 5075281354358777856）的仓位画像，依据 2026-11-14 至 2026-11-20 的公开成交复核：\n1. 同方向多笔建仓不代表小资金占比。历史参考期以约30万USDT作情景基数，11月14日实测保证金余额33.63万仅作对照；当期8个完整轮次首笔名义仓位中位数约66.67%、20笔加仓约63.34%，这些不是逐笔同期权益的实测比例。\n2. 11月20日MU这轮开仓前，账户由约500.29USDT加上499500USDT入金恢复到约50万。5笔买入名义金额约19.98万、4.99万、24.90万、24.92万、1.89万，对这一参考资金分别约40%、10%、50%、50%、3.8%，累计约153.4%。这是一轮观察样本，不是每轮固定模板。\n3. 资金基数随提现、入金和盈亏变化。禁止用固定300万解释当前成交；也不能把历史30万、最新50万或AUM套用于所有历史和未来。数字先验以lead_trader_sizing_prior中有效的datedCapitalSizingScenario为准；缓存缺失或过期时不沿用这些数值。\n4. 对每个新增开仓或加仓信号独立判断本单增量名义仓位，结合本账户权益、已有同向敞口、剩余限额、可用余额和流动性预留后续加仓空间。上次单笔计划不是永久持仓目标；累计敞口不能再次作为本单新增量。\n5. 原交易员当前设定杠杆未从币安确认。仓位和杠杆分开判断，不直接复制原账户USDT金额，不默认某个杠杆。position_limits_enabled=false时，我们额外设置的仓位及杠杆上限已关闭；根据有效历史先验、本账户实际权益、已有敞口、可用保证金和流动性自主判断本单增量，不沿用原15%、60%、300%、40%或10倍阈值。已有仓位加仓沿用当前合约杠杆；新仓杠杆在币安返回的合约档位内判断。必须满足币安可用资金、杠杆及名义档位、最小下单量和委托数量规则，并为可能的后续加仓留出空间。价格保护和时效检查仍然生效。退出只跟随已观察到的带单员减仓或全平信号，不根据本账户浮亏、价格变化、日亏损或AI观点主动退出。开仓及加仓的AI判断与来源驱动的退出分开执行；存在待处理平仓时不等待AI模型完成；无法满足时缩小本单或跳过，并用中文说明。",
+  "sourceEvidence": "evidence/aoying-order-sizing-source-2026-11-20.json",
+  "perOrderReport": "evidence/aoying-per-order-sizing-2026-11-20.json",
+  "requiresExistingRiskLimits": false,
+  "runtimePrior": {
+    "schemaVersion": 1,
+    "portfolioId": "5075281354358777856",
+    "traderName": "熬鹰资本",
+    "collectedAtMs": 1795184310917,
+    "collectedAt": "2026-11-20T14:18:30.917+00:00",
+    "snapshotAtCollection": {
+      "marginBalanceUsdt": "509882.04807143",
+      "positionVisibility": "hidden",
+      "positionExposureRatios": null,
+      "accountGrossExposureFraction": null,
+      "observedAt": "2026-11-20T14:18:30.731+00:00",
+      "isLive": false
+    },
+    "historicalAccountExposureFractions": null,
+    "history": {
+      "rows": 110,
+      "totalReported": 110,
+      "complete": true,
+      "firstOpenedAtMs": 1784699288285,
+      "lastClosedAtMs": 1795016431494,
+      "all": {
+        "closedCycles": 110,
+        "reportedLeverage": {
+          "count": 110,
+          "p10": "2",
+          "median": "5",
+          "p90": "10",
+          "max": "20"
+        },
+        "leverageCounts": {
+          "1": 3,
+          "2": 24,
+          "3": 18,
+          "4": 8,
+          "5": 27,
+          "6": 3,
+          "10": 20,
+          "15": 4,
+          "20": 3
+        },
+        "marginModeCounts": {
+          "CROSS": 110
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 110,
+          "p10": "199079.65394046",
+          "median": "704353.17515971",
+          "p90": "4212680.37833073",
+          "max": "14169356.43780472"
+        }
+      },
+      "recent30Days": {
+        "closedCycles": 27,
+        "reportedLeverage": {
+          "count": 27,
+          "p10": "2",
+          "median": "5",
+          "p90": "12",
+          "max": "20"
+        },
+        "leverageCounts": {
+          "1": 1,
+          "2": 3,
+          "3": 4,
+          "4": 1,
+          "5": 6,
+          "10": 9,
+          "15": 1,
+          "20": 2
+        },
+        "marginModeCounts": {
+          "CROSS": 27
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 27,
+          "p10": "300095.62524805",
+          "median": "1010527.96119995",
+          "p90": "9917199.49676577",
+          "max": "14169356.43780472"
+        }
+      }
+    },
+    "bySymbolRecent30Days": {
+      "BTCUSDT": {
+        "closedCycles": 6,
+        "reportedLeverage": {
+          "count": 6,
+          "p10": "5",
+          "median": "10",
+          "p90": "10",
+          "max": "10"
+        },
+        "leverageCounts": {
+          "5": 2,
+          "10": 4
+        },
+        "marginModeCounts": {
+          "CROSS": 6
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 6,
+          "p10": "874427.96459998",
+          "median": "1400904.80614999",
+          "p90": "4875931.01315026",
+          "max": "7943566.28010045"
+        },
+        "orderSizingAtDatedReferenceCapital": {
+          "historical300k": {
+            "increaseOrders": 10,
+            "initialOrderFraction": {
+              "count": 3,
+              "p10": "0.89740577",
+              "median": "1.82118889",
+              "p90": "1.94034109",
+              "max": "1.97012913"
+            },
+            "additionOrderFraction": {
+              "count": 7,
+              "p10": "0.66677263",
+              "median": "1.82076034",
+              "p90": "2.03817229",
+              "max": "2.12095539"
+            },
+            "allIncreaseOrderFraction": {
+              "count": 10,
+              "p10": "0.66658293",
+              "median": "1.82097461",
+              "p90": "1.99678074",
+              "max": "2.12095539"
+            }
+          }
+        }
+      },
+      "ETHUSDT": {
+        "closedCycles": 8,
+        "reportedLeverage": {
+          "count": 8,
+          "p10": "5",
+          "median": "10",
+          "p90": "20",
+          "max": "20"
+        },
+        "leverageCounts": {
+          "5": 2,
+          "10": 3,
+          "15": 1,
+          "20": 2
+        },
+        "marginModeCounts": {
+          "CROSS": 8
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 8,
+          "p10": "668101.26862987",
+          "median": "6639500.47726886",
+          "p90": "12704155.39950533",
+          "max": "14169356.43780472"
+        }
+      },
+      "HYPEUSDT": {
+        "closedCycles": 1,
+        "reportedLeverage": {
+          "count": 1,
+          "p10": "5",
+          "median": "5",
+          "p90": "5",
+          "max": "5"
+        },
+        "leverageCounts": {
+          "5": 1
+        },
+        "marginModeCounts": {
+          "CROSS": 1
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 1,
+          "p10": "2748419.49590592",
+          "median": "2748419.49590592",
+          "p90": "2748419.49590592",
+          "max": "2748419.49590592"
+        }
+      },
+      "MUUSDT": {
+        "closedCycles": 2,
+        "reportedLeverage": {
+          "count": 2,
+          "p10": "1.4",
+          "median": "3",
+          "p90": "4.6",
+          "max": "5"
+        },
+        "leverageCounts": {
+          "1": 1,
+          "5": 1
+        },
+        "marginModeCounts": {
+          "CROSS": 2
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 2,
+          "p10": "845222.17222695",
+          "median": "2705675.94554318",
+          "p90": "4566129.7188594",
+          "max": "5031243.16218846"
+        },
+        "orderSizingAtDatedReferenceCapital": {
+          "historical300k": {
+            "increaseOrders": 2,
+            "initialOrderFraction": {
+              "count": 1,
+              "p10": "0.66684245",
+              "median": "0.66684245",
+              "p90": "0.66684245",
+              "max": "0.66684245"
+            },
+            "additionOrderFraction": {
+              "count": 1,
+              "p10": "0.60018665",
+              "median": "0.60018665",
+              "p90": "0.60018665",
+              "max": "0.60018665"
+            },
+            "allIncreaseOrderFraction": {
+              "count": 2,
+              "p10": "0.60685223",
+              "median": "0.63351455",
+              "p90": "0.66017687",
+              "max": "0.66684245"
+            }
+          },
+          "latestMuAfterDeposit": {
+            "increaseOrders": 5,
+            "initialOrderFraction": {
+              "count": 1,
+              "p10": "0.39955934",
+              "median": "0.39955934",
+              "p90": "0.39955934",
+              "max": "0.39955934"
+            },
+            "additionOrderFraction": {
+              "count": 4,
+              "p10": "0.05646791",
+              "median": "0.29892542",
+              "p90": "0.49826045",
+              "max": "0.49838617"
+            },
+            "allIncreaseOrderFraction": {
+              "count": 5,
+              "p10": "0.06267017",
+              "median": "0.39955934",
+              "p90": "0.49821855",
+              "max": "0.49838617"
+            }
+          }
+        }
+      },
+      "NVDAUSDT": {
+        "closedCycles": 3,
+        "reportedLeverage": {
+          "count": 3,
+          "p10": "2.2",
+          "median": "3",
+          "p90": "3",
+          "max": "3"
+        },
+        "leverageCounts": {
+          "2": 1,
+          "3": 2
+        },
+        "marginModeCounts": {
+          "CROSS": 3
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 3,
+          "p10": "627299.45309825",
+          "median": "694035.84071989",
+          "p90": "710543.57582359",
+          "max": "714670.50959952"
+        },
+        "orderSizingAtDatedReferenceCapital": {
+          "historical300k": {
+            "increaseOrders": 8,
+            "initialOrderFraction": {
+              "count": 2,
+              "p10": "0.3881049",
+              "median": "0.6072562",
+              "p90": "0.8264075",
+              "max": "0.88119532"
+            },
+            "additionOrderFraction": {
+              "count": 6,
+              "p10": "0.32122685",
+              "median": "0.50005016",
+              "p90": "0.91931071",
+              "max": "0.98003541"
+            },
+            "allIncreaseOrderFraction": {
+              "count": 8,
+              "p10": "0.32202346",
+              "median": "0.50005016",
+              "p90": "0.91084735",
+              "max": "0.98003541"
+            }
+          }
+        }
+      },
+      "SKHYNIXUSDT": {
+        "closedCycles": 2,
+        "reportedLeverage": {
+          "count": 2,
+          "p10": "2.1",
+          "median": "2.5",
+          "p90": "2.9",
+          "max": "3"
+        },
+        "leverageCounts": {
+          "2": 1,
+          "3": 1
+        },
+        "marginModeCounts": {
+          "CROSS": 2
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 2,
+          "p10": "210012.0184402",
+          "median": "250004.16219967",
+          "p90": "289996.30595913",
+          "max": "299994.34189899"
+        },
+        "orderSizingAtDatedReferenceCapital": {
+          "historical300k": {
+            "increaseOrders": 3,
+            "initialOrderFraction": {
+              "count": 1,
+              "p10": "0.33327322",
+              "median": "0.33327322",
+              "p90": "0.33327322",
+              "max": "0.33327322"
+            },
+            "additionOrderFraction": {
+              "count": 2,
+              "p10": "0.33332098",
+              "median": "0.33335396",
+              "p90": "0.33338693",
+              "max": "0.33339517"
+            },
+            "allIncreaseOrderFraction": {
+              "count": 3,
+              "p10": "0.33328113",
+              "median": "0.33331274",
+              "p90": "0.33337869",
+              "max": "0.33339517"
+            }
+          }
+        }
+      },
+      "SNDKUSDT": {
+        "closedCycles": 2,
+        "reportedLeverage": {
+          "count": 2,
+          "p10": "2.1",
+          "median": "2.5",
+          "p90": "2.9",
+          "max": "3"
+        },
+        "leverageCounts": {
+          "2": 1,
+          "3": 1
+        },
+        "marginModeCounts": {
+          "CROSS": 2
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 2,
+          "p10": "1027004.49869842",
+          "median": "2542305.49909174",
+          "p90": "4057606.49948506",
+          "max": "4436431.74958338"
+        }
+      },
+      "SPCXUSDT": {
+        "closedCycles": 1,
+        "reportedLeverage": {
+          "count": 1,
+          "p10": "4",
+          "median": "4",
+          "p90": "4",
+          "max": "4"
+        },
+        "leverageCounts": {
+          "4": 1
+        },
+        "marginModeCounts": {
+          "CROSS": 1
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 1,
+          "p10": "199957.43999607",
+          "median": "199957.43999607",
+          "p90": "199957.43999607",
+          "max": "199957.43999607"
+        }
+      },
+      "ZECUSDT": {
+        "closedCycles": 2,
+        "reportedLeverage": {
+          "count": 2,
+          "p10": "10",
+          "median": "10",
+          "p90": "10",
+          "max": "10"
+        },
+        "leverageCounts": {
+          "10": 2
+        },
+        "marginModeCounts": {
+          "CROSS": 2
+        },
+        "cyclePeakCostNotionalProxyUsdt": {
+          "count": 2,
+          "p10": "310138.74260076",
+          "median": "350041.12308074",
+          "p90": "389943.50356073",
+          "max": "399919.09868073"
+        },
+        "orderSizingAtDatedReferenceCapital": {
+          "historical300k": {
+            "increaseOrders": 5,
+            "initialOrderFraction": {
+              "count": 1,
+              "p10": "0.33337329",
+              "median": "0.33337329",
+              "p90": "0.33337329",
+              "max": "0.33337329"
+            },
+            "additionOrderFraction": {
+              "count": 4,
+              "p10": "0.16664022",
+              "median": "0.16668769",
+              "p90": "0.167029",
+              "max": "0.16716357"
+            },
+            "allIncreaseOrderFraction": {
+              "count": 5,
+              "p10": "0.1666431",
+              "median": "0.16671501",
+              "p90": "0.2668894",
+              "max": "0.33337329"
+            }
+          }
+        }
+      }
+    },
+    "executionStyle": {
+      "orderWindow": {
+        "startTime": 1794579510852,
+        "endTime": 1795184310852,
+        "complete": true,
+        "signals": 45
+      },
+      "uniqueOrders": 45,
+      "reconciledClosedCycles": 8,
+      "cyclesWithAdditions": 8,
+      "initialQuantityFractionOfCyclePeak": {
+        "count": 8,
+        "p10": "0.13759629",
+        "median": "0.33303318",
+        "p90": "0.51136347",
+        "max": "0.52724612"
+      },
+      "additionQuantityFractionOfCyclePeak": {
+        "count": 20,
+        "p10": "0.13395107",
+        "median": "0.28630988",
+        "p90": "0.42875569",
+        "max": "0.49544338"
+      },
+      "increaseOrdersPerCycle": {
+        "count": 8,
+        "p10": "2",
+        "median": "4",
+        "p90": "4.3",
+        "max": "5"
+      }
+    },
+    "sources": {
+      "baseUrl": "https://www.binance.com/bapi/futures/v1/friendly/future/copy-trade/",
+      "balance": "GET lead-portfolio/detail: data.marginBalance (USDT)",
+      "historicalLeverage": "POST lead-portfolio/position-history: data.list[].leverage",
+      "peakCostNotionalProxy": "data.list[].avgCost * data.list[].maxOpenInterest; cost-based proxy, not peak mark notional",
+      "orderSizing": "POST lead-portfolio/order-history: executedQty, side, positionSide, orderTime, orderUpdateTime"
+    },
+    "limitations": [
+      "历史账户仓位比例未知：缺少与历史仓位同期的账户权益，不能用本次余额或 AUM 代替。",
+      "首仓/加仓比例以该轮峰值持仓数量为分母，不是账户权益比例，也不是模型建议仓位。",
+      "历史杠杆是查询时的仓位历史字段，不能视为开仓瞬间或当前未平仓合约的设定杠杆。",
+      "峰值数量乘平均成本只是成本名义金额估算，不能把多轮峰值相加当作同时持仓。",
+      "加仓指同轮内后续增加数量的订单；多个订单可能属于同一交易意图。",
+      "样本仅覆盖公开可见历史；缺失、不完整或无法对齐的交易轮次不参与首仓/加仓比例统计。"
+    ],
+    "datedCapitalSizingScenario": {
+      "portfolioId": "5075281354358777856",
+      "sampleCollectedAt": "2026-11-20T14:18:30.917+00:00",
+      "ratiosAreFractions": true,
+      "historicalPeriod": {
+        "startTimeMs": 1794579510852,
+        "endTimeMs": 1795018326223,
+        "capitalBasisUsdt": "300000",
+        "kind": "hypothetical_reference",
+        "verifiedByBinance": false,
+        "supportingBalance": {
+          "marginBalanceUsdt": "336255.30634064",
+          "observedAt": "2026-11-14T10:56:37.915+00:00"
+        },
+        "summary": {
+          "increaseOrders": 28,
+          "initialOrderFraction": {
+            "count": 8,
+            "p10": "0.33330392",
+            "median": "0.66665122",
+            "p90": "1.86587097",
+            "max": "1.97012913"
+          },
+          "additionOrderFraction": {
+            "count": 20,
+            "p10": "0.16670955",
+            "median": "0.63339162",
+            "p90": "1.93705094",
+            "max": "2.12095539"
+          },
+          "allIncreaseOrderFraction": {
+            "count": 28,
+            "p10": "0.167029",
+            "median": "0.66652829",
+            "p90": "1.94340186",
+            "max": "2.12095539"
+          }
+        },
+        "sensitivityAt336255Reference": {
+          "increaseOrders": 28,
+          "initialOrderFraction": {
+            "count": 8,
+            "p10": "0.29736683",
+            "median": "0.59477237",
+            "p90": "1.66469132",
+            "max": "1.75770829"
+          },
+          "additionOrderFraction": {
+            "count": 20,
+            "p10": "0.1487348",
+            "median": "0.56509885",
+            "p90": "1.72819661",
+            "max": "1.89227234"
+          },
+          "allIncreaseOrderFraction": {
+            "count": 28,
+            "p10": "0.14901981",
+            "median": "0.59466269",
+            "p90": "1.73386277",
+            "max": "1.89227234"
+          }
+        }
+      },
+      "latestMuCycle": {
+        "cycleId": "observed:MUUSDT:LONG:1795182329233",
+        "startTimeMs": 1795182329233,
+        "capitalBasisUsdt": "500000.29211570",
+        "capitalBasisKind": "snapshot_plus_deposit_reference",
+        "verifiedContemporaneousEquity": false,
+        "basisComponents": {
+          "balanceBeforeDepositUsdt": "500.29211570",
+          "balanceObservedAtMs": 1795181498585,
+          "depositUsdt": "499500.0",
+          "depositAtMs": 1795181924940
+        },
+        "orders": [
+          {
+            "timeBeijing": "2026-11-20T21:45:29+08:00",
+            "phase": "initial",
+            "quantity": "303.03",
+            "price": "659.2739636",
+            "notionalUsdt": "199779.789189708",
+            "notionalFraction": "0.3995593449443005201083851164"
+          },
+          {
+            "timeBeijing": "2026-11-20T21:45:44+08:00",
+            "phase": "addition",
+            "quantity": "75.75",
+            "price": "659.2987815",
+            "notionalUsdt": "49941.882698625",
+            "notionalFraction": "0.09988370704205199763210255060"
+          },
+          {
+            "timeBeijing": "2026-11-20T21:46:28+08:00",
+            "phase": "addition",
+            "quantity": "375.93",
+            "price": "662.3140185",
+            "notionalUsdt": "248983.708974705",
+            "notionalFraction": "0.4979671270213782263223689062"
+          },
+          {
+            "timeBeijing": "2026-11-20T21:47:08+08:00",
+            "phase": "addition",
+            "quantity": "375.71",
+            "price": "663.2595057",
+            "notionalUsdt": "249193.228886547",
+            "notionalFraction": "0.4983861666002461465049534828"
+          },
+          {
+            "timeBeijing": "2026-11-20T21:50:25+08:00",
+            "phase": "addition",
+            "quantity": "28.54",
+            "price": "663.3",
+            "notionalUsdt": "18930.582",
+            "notionalFraction": "0.03786114188033207365496014366"
+          }
+        ],
+        "totalEntryCostUsdt": "766829.191749585",
+        "cumulativeEntryCostFraction": "1.533657487488308964222770200",
+        "status": "no public close observed; current positions hidden",
+        "configuredLeverage": null,
+        "summary": {
+          "increaseOrders": 5,
+          "initialOrderFraction": {
+            "count": 1,
+            "p10": "0.39955934",
+            "median": "0.39955934",
+            "p90": "0.39955934",
+            "max": "0.39955934"
+          },
+          "additionOrderFraction": {
+            "count": 4,
+            "p10": "0.05646791",
+            "median": "0.29892542",
+            "p90": "0.49826045",
+            "max": "0.49838617"
+          },
+          "allIncreaseOrderFraction": {
+            "count": 5,
+            "p10": "0.06267017",
+            "median": "0.39955934",
+            "p90": "0.49821855",
+            "max": "0.49838617"
+          }
+        }
+      },
+      "limitations": [
+        "Historical 300k is a period-specific sizing scenario, not verified per-order equity.",
+        "The 336255.30634064 balance is a dated reference, not the equity at every historical execution.",
+        "Latest MU ratios use pre-entry balance plus the observed deposit, excluding subsequent PnL and fees; they are approximate.",
+        "Do not extend either capital basis to future deposits, withdrawals or other traders.",
+        "Nominal order notional is not margin usage. Contract configured leverage remains unverified.",
+        "The sample covers 7 days of visible public orders. Historical rows with ambiguous phases are excluded from phase statistics."
+      ]
+    },
+    "capitalHistoryReview": {
+      "status": "fixed_capital_assumption_withdrawn",
+      "reviewedAtMs": 1795183602175,
+      "reason": "User corrected the earlier estimate. Binance balance and public deposits/withdrawals show changing portfolio equity; neither 3000000 nor 300000 is verified as a constant historical base.",
+      "fixedHistoricalCapitalUsdt": null,
+      "verifiedBalanceObservations": [
+        {
+          "marginBalanceUsdt": "336255.30634064",
+          "observedAt": "2026-11-14T10:56:37.915+00:00",
+          "source": "Binance lead-portfolio/detail data.marginBalance"
+        },
+        {
+          "marginBalanceUsdt": "507766.15426996",
+          "observedAt": "2026-11-20T14:02:30.288+00:00",
+          "source": "Binance lead-portfolio/detail data.marginBalance"
+        }
+      ],
+      "publicTransfers": {
+        "source": "Binance POST lead-portfolio/transfer-history data.list",
+        "observedAt": "2026-11-20T14:02:30.398+00:00",
+        "complete": true,
+        "recent": [
+          {
+            "time": 1795181924940,
+            "coin": "USDT",
+            "amount": 499500.0,
+            "transType": "LEAD_DEPOSIT"
+          },
+          {
+            "time": 1795018326224,
+            "coin": "USDT",
+            "amount": 374433.0,
+            "transType": "LEAD_WITHDRAW"
+          },
+          {
+            "time": 1794650360556,
+            "coin": "USDT",
+            "amount": 6244.46010394,
+            "transType": "LEAD_DEPOSIT"
+          },
+          {
+            "time": 1793907860870,
+            "coin": "USDT",
+            "amount": 1500000.0,
+            "transType": "LEAD_WITHDRAW"
+          }
+        ]
+      },
+      "latestMuVisibleOrderAnalysis": {
+        "quantity": "1158.96",
+        "entryCostNotional": "766829.191749585",
+        "weightedEntryPrice": "661.6528540670816939324911990",
+        "balance": "507766.15426996",
+        "entryNotionalToBalance": "1.510201468335542135421923071",
+        "markPrice": "668.94410965",
+        "markTime": "2026-11-20T22:03:44+08:00",
+        "markNotional": "775279.4653199640",
+        "markNotionalToEarlierBalance": "1.526843525903416795573014112",
+        "orders": [
+          {
+            "at": "2026-11-20T21:45:29+08:00",
+            "quantity": 303.03,
+            "price": 659.2739636,
+            "notional": "199779.789189708"
+          },
+          {
+            "at": "2026-11-20T21:45:44+08:00",
+            "quantity": 75.75,
+            "price": 659.2987815,
+            "notional": "49941.882698625"
+          },
+          {
+            "at": "2026-11-20T21:46:28+08:00",
+            "quantity": 375.93,
+            "price": 662.3140185,
+            "notional": "248983.708974705"
+          },
+          {
+            "at": "2026-11-20T21:47:08+08:00",
+            "quantity": 375.71,
+            "price": 663.2595057,
+            "notional": "249193.228886547"
+          },
+          {
+            "at": "2026-11-20T21:50:25+08:00",
+            "quantity": 28.54,
+            "price": 663.3,
+            "notional": "18930.582"
+          }
+        ],
+        "recentTransfers": [
+          {
+            "at": "2026-11-20T21:38:44+08:00",
+            "amount": 499500.0,
+            "type": "LEAD_DEPOSIT"
+          },
+          {
+            "at": "2026-11-19T00:12:06+08:00",
+            "amount": 374433.0,
+            "type": "LEAD_WITHDRAW"
+          },
+          {
+            "at": "2026-11-14T17:59:20+08:00",
+            "amount": 6244.46010394,
+            "type": "LEAD_DEPOSIT"
+          },
+          {
+            "at": "2026-11-06T03:44:20+08:00",
+            "amount": 1500000.0,
+            "type": "LEAD_WITHDRAW"
+          },
+          {
+            "at": "2026-10-02T12:27:18+08:00",
+            "amount": 500000.0,
+            "type": "LEAD_DEPOSIT"
+          },
+          {
+            "at": "2026-09-17T23:23:05+08:00",
+            "amount": 100000.0,
+            "type": "LEAD_WITHDRAW"
+          }
+        ]
+      },
+      "limitations": [
+        "MU quantity is reconstructed from visible public executions; the exchange current-positions response remains hidden.",
+        "The mark price and balance in the MU comparison were sampled at different times; the ratio is approximate.",
+        "The MU ratio alone does not establish exposure from other positions or configured contract leverage.",
+        "Treat all balance observations as dated historical inputs, not the live balance at future signals."
+      ]
+    }
+  },
+  "requiresExchangeRules": true,
+  "ai_settings": {
+    "position_limits_enabled": false
+  },
+  "demo_budget_usdt": null,
+  "existing_contract_leverage_policy": "retain current configured leverage for additions",
+  "exit_policy": "leader_only"
+}

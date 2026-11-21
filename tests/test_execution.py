@@ -12,7 +12,7 @@ from followtrade.binance import BASE_URLS, ExecutionAccount, Futures
 from followtrade.clients import BinanceAPIError, Quote, ServiceError, Signal
 from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.execution import ExchangeAccount, WAITING_FOR_MODEL, choose_mode
-from followtrade.store import Store, now_ms
+from followtrade.store import Store, now_ms, utc_day
 from followtrade.telegram import Telegram
 
 
@@ -30,7 +30,7 @@ class ExecutionTest(TestCase):
         demo = ExecutionAccount("demo", "demo-key", "demo-secret", D(1000), "fixed")
         mainnet = ExecutionAccount("mainnet", "mainnet-key", "mainnet-secret", None, "fixed")
         cfg = load_config(Path(__file__).resolve().parents[1] / "config.example.json")
-        self.cfg = replace(cfg, database=Path(tmp.name) / "test.sqlite", execution=(demo, mainnet))
+        self.cfg = replace(cfg, database=Path(tmp.name) / "test.sqlite", execution=(demo, mainnet), exit_policy="protected")
         self.store = Store(self.cfg.database, cfg.portfolio, cfg.starting, ("fixed",))
         self.addCleanup(self.store.db.close)
         self.modes = ("demo", "mainnet")
@@ -55,9 +55,9 @@ class ExecutionTest(TestCase):
         return {"status": status, "executedQty": executed, "avgPrice": "100",
                 "clientOrderId": params["newClientOrderId"], "symbol": params["symbol"], "side": params["side"]}
 
-    def observe(self, identity, action="increase", opened=0, symbol=SYMBOL):
+    def observe(self, identity, action="increase", opened=0, symbol=SYMBOL, quantity=D(10)):
         stamp = now_ms()
-        signal = Signal(identity, stamp, symbol, "LONG", action, D(10), D(100), opened)
+        signal = Signal(identity, stamp, symbol, "LONG", action, quantity, D(100), opened)
         self.store.ingest([signal], ("fixed",), stamp, progress={"orders.last_end": stamp, "feed_status": "正常"},
                           execution_modes=self.modes)
         return signal
@@ -587,6 +587,80 @@ class ExecutionTest(TestCase):
         self.assertNotEqual(self.orders[-1]["newClientOrderId"], self.orders[-2]["newClientOrderId"])
         self.assertFalse(self.trader.owned(self.store))
         self.assertFalse(self.store.pending("demo"))
+
+    def test_leader_only_exchange_ignores_local_stops_and_follows_reduce_then_close(self):
+        self.trader.config = replace(self.cfg, exit_policy="leader_only")
+        choose_mode(self.store, self.cfg.execution, "demo")
+        opening = self.observe("leader-only-open")
+        self.trader.tick(self.store)
+        initial = D(self.orders[0]["quantity"])
+        self.set_position(initial)
+        self.client.account.return_value[1][0]["markPrice"] = "90"
+        self.asset["unrealizedProfit"] = "-100"
+        with self.store.transaction():
+            self.store.put(f"execution.daily.demo.{utc_day(now_ms())}.tripped", "1")
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+        self.observe("old-auto-stop", action="daily_stop")
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+        self.observe("source-reduce", action="decrease", quantity=D(5))
+        self.trader.tick(self.store)
+        self.assertEqual(D(self.orders[-1]["quantity"]), initial / 2)
+        self.set_position(D(self.trader.owned(self.store)[SYMBOL]["quantity"]))
+        self.observe("source-close", action="close", opened=opening.time)
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 3)
+        self.assertEqual(self.orders[-1]["reduceOnly"], "true")
+        self.assertFalse(self.trader.owned(self.store))
+        self.assertEqual([row[0] for row in self.store.db.execute("SELECT action FROM exchange_orders ORDER BY rowid")],
+                         ["increase", "decrease", "close"])
+
+    def test_leader_only_fresh_source_entry_is_not_blocked_by_old_auto_stop(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        self.observe("protected-open")
+        self.trader.tick(self.store)
+        self.set_position(self.orders[-1]["quantity"])
+        self.client.account.return_value[1][0]["markPrice"] = "90"
+        self.trader.tick(self.store)
+        self.assertEqual(self.store.db.execute("SELECT action FROM exchange_orders ORDER BY rowid DESC LIMIT 1").fetchone()[0], "position_stop")
+        stop_time = self.store.db.execute("SELECT MAX(time) FROM signals WHERE action='position_stop'").fetchone()[0]
+        self.assertFalse(self.trader.owned(self.store))
+        self.trader.config = replace(self.cfg, exit_policy="leader_only")
+        self.client.account.return_value = self.asset, []
+        with self.store.transaction():
+            self.store.put(f"execution.daily.demo.{utc_day(now_ms())}.tripped", "1")
+        signal = Signal("late-visible-add", stop_time, SYMBOL, "LONG", "increase", D(5), D(100))
+        self.store.ingest([signal], ("fixed",), now_ms(), execution_modes=self.modes)
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 3)
+        self.assertIn(SYMBOL, self.trader.owned(self.store))
+
+    def test_leader_only_close_does_not_wait_for_ai_or_trigger_own_stop(self):
+        self.managed_ai()
+        self.trader.config = replace(self.trader.config, exit_policy="leader_only")
+        opening = self.observe("managed-leader-only-open")
+        self.trader.ai_result = opening.identity, (D(".4"), 20, "AI"), None
+        self.trader.tick(self.store)
+        self.set_position(self.orders[-1]["quantity"])
+        self.client.account.return_value[1][0]["markPrice"] = "90"
+        self.asset["unrealizedProfit"] = "-100"
+        future = Future()
+        self.trader.model_pool = Mock()
+        self.trader.model_pool.submit.return_value = future
+        self.observe("awaiting-managed-ai")
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 1)
+        self.observe("managed-source-close", action="close", opened=opening.time)
+        self.trader.tick(self.store)
+        self.assertFalse(future.done())
+        self.assertEqual(len(self.orders), 2)
+        self.assertEqual(self.orders[-1]["reduceOnly"], "true")
+        self.client.account.return_value = self.asset, []
+        future.set_result((D(".5"), 20, "late AI"))
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 2)
+        self.assertFalse(self.trader.owned(self.store))
 
     def test_signed_requests_use_each_accounts_host_and_key(self):
         with patch("followtrade.binance.request_json", return_value={}) as request:

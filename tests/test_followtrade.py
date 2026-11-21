@@ -11,9 +11,9 @@ from unittest.mock import Mock, patch
 
 from followtrade.__main__ import OrderTask, Runner, collect
 from followtrade.clients import BinanceFeed, Model, Quote, ServiceError, Signal
-from followtrade.config import AIConfig, TelegramConfig, load_config
+from followtrade.config import AIConfig, ConfigError, TelegramConfig, load_config
 from followtrade.paper import PaperEngine
-from followtrade.store import Store
+from followtrade.store import Store, utc_day
 from followtrade.telegram import Telegram
 from probe import AccessStopped, BinanceBusinessError, ProbeError
 
@@ -33,7 +33,7 @@ class PaperTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         path = Path(self.tmp.name) / "state.sqlite"
         example = Path(__file__).resolve().parents[1] / "config.example.json"
-        self.cfg = replace(load_config(example), database=path)
+        self.cfg = replace(load_config(example), database=path, exit_policy="protected")
         self.store = Store(path, self.cfg.portfolio, self.cfg.starting, ("fixed", "ai"))
         self.addCleanup(self.store.db.close)
         self.engine = PaperEngine(self.store, self.cfg)
@@ -166,6 +166,56 @@ class PaperTest(unittest.TestCase):
         self.engine.protect(("fixed",), losing, NOW + 1000)
         self.assertEqual(self.store.positions("fixed"), [])
         self.assertLess(self.store.snapshot("fixed")[0], D(1000))
+
+    def test_leader_only_paper_holds_through_local_stops_and_follows_source_exits(self):
+        self.engine.config = replace(self.cfg, exit_policy="leader_only")
+        opening = observed("leader-only-open")
+        self.entry(opening)
+        quantity = D(self.store.positions("fixed")[0]["qty"])
+        with self.store.transaction():
+            self.store.db.execute("INSERT OR REPLACE INTO daily VALUES ('fixed', ?, '2000', 1)", (utc_day(NOW),))
+        losing = {SYMBOL: Quote(D(110), D("110.01"), NOW + 1000)}
+        self.engine.protect(("fixed",), losing, NOW + 1000)
+        self.assertEqual(D(self.store.positions("fixed")[0]["qty"]), quantity)
+        reduction = observed("leader-reduce", action="decrease", at=NOW + 1000, qty="10")
+        self.store.ingest([reduction], ("fixed",), NOW + 1000)
+        self.engine.process("fixed", reduction, losing, None, NOW + 1000)
+        self.assertEqual(D(self.store.positions("fixed")[0]["qty"]), quantity / 2)
+        closing = observed("leader-close", action="close", at=NOW + 1001, opened=opening.time)
+        self.store.ingest([closing], ("fixed",), NOW + 1001)
+        self.engine.process("fixed", closing, losing, None, NOW + 1001)
+        self.assertEqual(self.store.positions("fixed"), [])
+        reasons = [row[0] for row in self.store.db.execute("SELECT reason FROM fills WHERE action='平仓'")]
+        self.assertEqual(reasons, ["带单员全平记录"])
+
+    def test_leader_only_paper_ignores_old_loss_cooldown_and_autonomous_exit_jobs(self):
+        self.engine.config = replace(self.cfg, exit_policy="leader_only")
+        with self.store.transaction():
+            self.store.db.execute("INSERT INTO daily VALUES ('fixed', ?, '2000', 1)", (utc_day(NOW),))
+            self.store.put(f"cooldown:fixed:{SYMBOL}:SHORT", NOW + 1000)
+        self.entry(observed("after-old-stop"))
+        self.assertEqual(len(self.store.positions("fixed")), 1)
+        before = dict(self.store.positions("fixed")[0])
+        rogue = observed("old-stop-job", action="position_stop", at=NOW)
+        self.entry(rogue)
+        self.assertEqual(dict(self.store.positions("fixed")[0]), before)
+        self.assertIn("autonomous exit disabled", self.store.db.execute(
+            "SELECT result FROM jobs WHERE account='fixed' AND signal=?", (rogue.identity,)).fetchone()[0])
+
+    def test_exit_policy_configuration_and_telegram(self):
+        path = self.cfg.database.with_suffix(".json")
+        path.write_text("{}", encoding="utf-8")
+        self.assertTrue(load_config(path).protective_exits_enabled)
+        path.write_text('{"exit_policy":"leader_only"}', encoding="utf-8")
+        cfg = load_config(path)
+        self.assertFalse(cfg.protective_exits_enabled)
+        bot = Telegram(TelegramConfig("123:fake", 1, True), risk_config=cfg)
+        reply = bot.handle_message(self.store, ("fixed",), (), "/mode", 0)
+        self.assertIn("只跟随带单员减仓／全平", reply)
+        self.assertIn("本地自动止损已关闭", reply)
+        path.write_text('{"exit_policy":"unknown"}', encoding="utf-8")
+        with self.assertRaises(ConfigError):
+            load_config(path)
 
     def test_disabling_local_ai_keeps_the_demo_ai_strategy(self):
         cfg_path = self.cfg.database.with_suffix(".json")

@@ -206,6 +206,8 @@ AI_SYSTEM_PROMPT = (
     'When position_limits_enabled is false, judge incremental size and leverage from the historical prior, '
     'current exposure and account funds without applying old percentage caps. Available margin and '
     'exchange leverage/notional brackets remain binding. Leave room for likely subsequent additions. '
+    'With exit_policy=leader_only, reductions and full exits follow observed leader signals; '
+    'there is no autonomous price or daily-loss stop. Your decision only sizes the incremental entry. '
     'Skip if the allowable addition is below the minimum order notional. '
     'lead_trader_sizing_prior is descriptive historical data, not a sizing instruction. '
     'Its quantity fractions use the source cycle peak quantity as denominator, never account equity. '

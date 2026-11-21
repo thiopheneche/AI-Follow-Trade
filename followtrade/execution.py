@@ -287,7 +287,9 @@ class ExchangeAccount:
         gross = sum((abs(as_decimal(row["notional"])) for row in positions.values()), ZERO)
         margin = sum((as_decimal(row["initialMargin"]) for row in positions.values()), ZERO)
         notional = abs(as_decimal(current["notional"])) if current else ZERO
-        if daily or equity <= 0:
+        if equity <= 0:
+            return "account equity not positive"
+        if daily and cfg.protective_exits_enabled:
             return "daily loss guard"
         floor = max(cfg.minimum, as_decimal(rules["MIN_NOTIONAL"]["notional"]))
         exchange_rules = None
@@ -307,6 +309,7 @@ class ExchangeAccount:
                        "minimum_order_notional_usdt": floor,
                        "gross_notional_usdt": gross, "estimated_margin_usdt": margin,
                        "available_balance_usdt": as_decimal(asset["availableBalance"]),
+                       "exit_policy": cfg.exit_policy,
                        "existing_leverage_policy": "retain the existing contract leverage for additions"}
             decision = self._model_decision(signal, context)
             if decision is WAITING_FOR_MODEL:
@@ -366,6 +369,12 @@ class ExchangeAccount:
         self.reconcile(store)
         pending, owned = store.pending(self.mode), self.owned(store)
         pending = self._check_ai_deadline(store, pending)
+        if not self.config.protective_exits_enabled:
+            with store.transaction():
+                for signal, _ in pending:
+                    if signal.action not in ("increase", "decrease", "close"):
+                        store.done(self.mode, signal, "autonomous exit disabled by leader-only policy")
+            pending = [(signal, seen) for signal, seen in pending if signal.action in ("increase", "decrease", "close")]
         if not pending and not owned:
             return
         if not owned:
@@ -397,34 +406,38 @@ class ExchangeAccount:
                 if store.get(basis_key) is None:
                     store.put(basis_key, max(ZERO, wallet - budget))
                 equity = min(budget, equity - Decimal(store.get(basis_key)))
-            # Keep the full-wallet loss baseline separate from any older budget-based baseline.
-            basis = self.mode if budget is not None else f"{self.mode}.wallet"
-            daily_key = f"execution.daily.{basis}.{utc_day(now_ms())}"
-            day_start = Decimal(store.get(daily_key, equity))
-            if store.get(daily_key) is None:
-                store.put(daily_key, equity)
-            guard_key = daily_key + ".tripped"
-            daily = store.get(guard_key) is not None or equity <= day_start * (ONE - self.config.daily_loss)
-            if daily:
-                store.put(guard_key, 1)
-        for symbol, position in owned.items():
-            pos = positions[symbol]
-            entry = as_decimal(pos["entryPrice"])
-            mark = as_decimal(pos["markPrice"])
-            if mark <= 0 or entry <= 0:
-                raise ServiceError(f"Binance position mark or entry price invalid for {symbol}")
-            adverse = (entry - mark if position["leg"] == "LONG" else mark - entry) / entry
-            if daily or adverse >= self.config.position_stop:
-                signal = self._stop_signal(store, position, "daily_stop" if daily else "position_stop", now_ms())
-                self._exit(store, signal, position, self.client.filters(symbol), ONE, 0)
-                return
+            daily = False
+            if self.config.protective_exits_enabled:
+                # Keep full-wallet and older budget-based loss baselines separate.
+                basis = self.mode if budget is not None else f"{self.mode}.wallet"
+                daily_key = f"execution.daily.{basis}.{utc_day(now_ms())}"
+                day_start = Decimal(store.get(daily_key, equity))
+                if store.get(daily_key) is None:
+                    store.put(daily_key, equity)
+                guard_key = daily_key + ".tripped"
+                daily = store.get(guard_key) is not None or equity <= day_start * (ONE - self.config.daily_loss)
+                if daily:
+                    store.put(guard_key, 1)
+        if self.config.protective_exits_enabled:
+            for symbol, position in owned.items():
+                pos = positions[symbol]
+                entry = as_decimal(pos["entryPrice"])
+                mark = as_decimal(pos["markPrice"])
+                if mark <= 0 or entry <= 0:
+                    raise ServiceError(f"Binance position mark or entry price invalid for {symbol}")
+                adverse = (entry - mark if position["leg"] == "LONG" else mark - entry) / entry
+                if daily or adverse >= self.config.position_stop:
+                    signal = self._stop_signal(store, position, "daily_stop" if daily else "position_stop", now_ms())
+                    self._exit(store, signal, position, self.client.filters(symbol), ONE, 0)
+                    return
         for signal, seen in pending:
             position = owned.get(signal.symbol)
             if signal.action == "increase":
                 closed = store.has_source_close(signal)
+                source_exits = " AND o.action IN ('decrease','close')" if not self.config.protective_exits_enabled else ""
                 newest = store.db.execute("SELECT MAX(s.time) FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
                                           "WHERE o.mode=? AND s.portfolio=? AND s.symbol=? "
-                                          "AND o.action<>'increase' AND o.executed<>'0'",
+                                          "AND o.action<>'increase' AND o.executed<>'0'" + source_exits,
                                           (self.mode, signal.portfolio or store.active_trader(), signal.symbol)).fetchone()[0]
                 if not self.entry_enabled(store, signal):
                     result = "entry expired, feed unavailable or route changed"

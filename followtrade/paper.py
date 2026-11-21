@@ -28,7 +28,9 @@ class PaperEngine:
         cash, equity, gross, margin, details = self.store.snapshot(account)
         if any(not -5000 <= now - row[4] <= QUOTE_MAX_AGE_MS for row in details):
             return "account quotes stale"
-        if equity <= 0 or self._daily(account, equity, now):
+        if equity <= 0:
+            return "account equity not positive"
+        if self._daily(account, equity, now):
             return "daily loss guard"
         same_symbol = [row for row in details if row[0]["symbol"] == signal.symbol]
         current = next((row for row in same_symbol if row[0]["leg"] == signal.leg), None)
@@ -102,6 +104,8 @@ class PaperEngine:
                    size, price, position["leverage"], fee, realized, signal, reason, now)
 
     def _daily(self, account, equity, now):
+        if not self.config.protective_exits_enabled:
+            return False
         day = utc_day(now)
         db = self.store.db
         last = db.execute("SELECT * FROM daily WHERE account=?", (account,)).fetchone()
@@ -116,6 +120,8 @@ class PaperEngine:
     def protect(self, accounts, quotes, now):
         with self.store.transaction():
             self.store.save_marks(quotes)
+            if not self.config.protective_exits_enabled:
+                return
             for account in accounts:
                 _, equity, _, _, details = self.store.snapshot(account)
                 complete = all(current_quote(quotes, row[0]["symbol"], now) for row in details)
@@ -153,6 +159,9 @@ class PaperEngine:
                              (account, signal.identity)).fetchone()
             if not job or job[0] is not None:
                 return
+            if not cfg.protective_exits_enabled and signal.action not in ("increase", "decrease", "close"):
+                self.store.done(account, signal, "autonomous exit disabled by leader-only policy")
+                return
             if signal.time > now + 5000:
                 return
             if signal.action == "increase" and signal.time <= int(self.store.get(f"paper.entry_after.{account}", 0)):
@@ -175,7 +184,8 @@ class PaperEngine:
                     observed = Decimal(position["observed_lead_qty"]) + signal.quantity
                     db.execute("UPDATE positions SET observed_lead_qty=? WHERE account=? AND symbol=? AND leg=?",
                                (str(observed), *key))
-                cooldown = int(self.store.get(f"cooldown:{account}:{signal.symbol}:{signal.leg}", 0))
+                cooldown = (int(self.store.get(f"cooldown:{account}:{signal.symbol}:{signal.leg}", 0))
+                            if cfg.protective_exits_enabled else 0)
                 if now - signal.time >= cfg.max_age * 1000:
                     result = "signal expired"
                 elif closed:
@@ -227,4 +237,5 @@ class PaperEngine:
             "minimum_order_notional_usdt": self.config.minimum,
             "gross_notional_usdt": gross, "estimated_margin_usdt": margin,
             "available_balance_usdt": max(ZERO, equity - margin),
+            "exit_policy": self.config.exit_policy,
         }

@@ -17,6 +17,7 @@
   "minimum_notional_usdt": "10",
   "daily_loss_fraction": "0.05",
   "position_stop_fraction": "0.05",
+  "exit_policy": "leader_only",
   "ai": {
     "enabled": false,
     "local_paper_enabled": true,

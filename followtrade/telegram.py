@@ -292,11 +292,15 @@ class Telegram:
             if command in ("/mode", "/status") and self.risk_config is not None:
                 cfg = self.risk_config
                 if not cfg.position_limits_enabled("ai"):
-                    reply += "\nAI 仓位与杠杆由模型判断 · 策略上限已关闭\n币安档位、可用保证金、价格保护和止损继续生效"
+                    reply += "\nAI 仓位与杠杆由模型判断 · 策略上限已关闭\n币安档位、可用保证金和价格保护继续生效"
                 label = "固定盘限额" if not cfg.position_limits_enabled("ai") else "仓位限额"
                 reply += (f"\n{label}（名义金额／权益）· 单笔 {cfg.order_limit:.0%} · "
                           f"单标的 {cfg.symbol_limit:.0%} · 全账户 {cfg.gross_limit:.0%}"
                           f"\n{'固定盘保证金占用上限' if label == '固定盘限额' else '保证金占用上限'} {cfg.margin_limit:.0%}")
+                if cfg.exit_policy == "leader_only":
+                    reply += "\n退出：只跟随带单员减仓／全平 · 本地自动止损已关闭"
+                else:
+                    reply += f"\n退出：带单员信号及本地保护 · 单仓价格止损 {cfg.position_stop:.0%} · 日亏损保护 {cfg.daily_loss:.0%}"
             return reply
         value = text.strip() if taking_input else argument
         cancel = value.lower() == "cancel"

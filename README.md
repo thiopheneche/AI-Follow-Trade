@@ -41,7 +41,9 @@
 
 `max_entry_deviation_fraction` 设置相对带单成交价的不利入场价差上限。可在 `execution.demo` 或 `execution.mainnet` 下单独设置。用 `/mode` 查看各币安账户的生效值。
 
-AI 的 `ai.position_limits_enabled` 设为 `false` 时，开仓金额和新仓杠杆由模型判断，取消额外的单笔、单标的、总敞口、保证金占用及杠杆上限。程序读取币安合约档位，按实际可用保证金和交易规则执行；已有仓位加仓沿用当前合约杠杆，价格保护和止损继续生效。
+AI 的 `ai.position_limits_enabled` 设为 `false` 时，开仓金额和新仓杠杆由模型判断，取消额外的单笔、单标的、总敞口、保证金占用及杠杆上限。程序读取币安合约档位，按实际可用保证金和交易规则执行；已有仓位加仓沿用当前合约杠杆，价格保护继续生效。
+
+`exit_policy` 设为 `leader_only` 时，币安跟单和本地模拟只跟随带单员减仓、全平，不按自身浮亏或日亏损主动退出。设为 `protected` 则额外启用 `position_stop_fraction` 和 `daily_loss_fraction`。用 `/mode` 查看当前退出策略；币安强平不受该配置控制。
 
 固定策略仍使用 `order_notional_fraction` 等限额：单笔 15%、单标的 60%、全账户 300%、保证金 40%。将 `ai.position_limits_enabled` 设为 `true` 可让 AI 同样使用这些限额。Demo 的 `execution.demo.budget_usdt` 设为 `null` 时按账户实际权益计算。
 
