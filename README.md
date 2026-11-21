@@ -63,3 +63,5 @@ python -m followtrade.prior <portfolioId> --database /path/to/state.sqlite3 --ra
 ```sh
 python -m unittest discover -s tests
 ```
+
+`compare_reasoning.py --cases CASES.json --output RESULTS.json` 可对固定输入比较 `low`、`high`，每档重复两次。只使用 `FOLLOWTRADE_AI_KEY` 调用模型，不提交交易。
