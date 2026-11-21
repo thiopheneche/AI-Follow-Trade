@@ -433,9 +433,12 @@ class ExchangeAccount:
                     signal = self._stop_signal(store, position, "daily_stop" if daily else "position_stop", now_ms())
                     self._exit(store, signal, position, self.client.filters(symbol), ONE, 0)
                     return
+        awaiting_reductions = set()
         for signal, seen in pending:
             position = owned.get(signal.symbol)
             if signal.action == "increase":
+                if (signal.symbol, signal.leg) in awaiting_reductions and self.entry_enabled(store, signal):
+                    continue
                 closed = store.has_source_close(signal)
                 source_exits = " AND o.action IN ('decrease','close')" if not self.config.protective_exits_enabled else ""
                 newest = store.db.execute("SELECT MAX(s.time) FROM exchange_orders o JOIN signals s ON s.identity=o.signal "
@@ -459,8 +462,17 @@ class ExchangeAccount:
                   or (signal.action == "close" and signal.opened > position["opened"])):
                 result = "no matching Binance position"
             else:
-                lead_qty = Decimal(position["lead_quantity"])
-                fraction = ONE if signal.action == "close" else min(Decimal(".95"), signal.quantity / lead_qty) if lead_qty else ZERO
+                if signal.action == "close":
+                    fraction = ONE
+                elif store.has_source_close(signal):
+                    with store.transaction():
+                        store.done(self.mode, signal, "superseded by confirmed leader close")
+                    continue
+                else:
+                    fraction = store.source_reduction_fraction(signal, position["opened"])
+                    if fraction is None or (signal.symbol, signal.leg) in awaiting_reductions:
+                        awaiting_reductions.add((signal.symbol, signal.leg))
+                        continue
                 result = self._exit(store, signal, position, self.client.filters(signal.symbol), fraction, 0)
             if result is WAITING_FOR_MODEL:
                 continue

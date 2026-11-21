@@ -66,6 +66,17 @@ class Signal:
     portfolio: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class PartialPosition:
+    identity: str
+    symbol: str
+    leg: str
+    opened: int
+    updated: int
+    peak: Decimal
+    closed_volume: Decimal
+
+
 def order_signal(row):
     order = parse_order(row)
     hint = order["side_hint"]
@@ -148,18 +159,36 @@ class BinanceFeed:
         data = self._fetch("order-history", {"pageNumber": 1, "pageSize": 50})
         return [signal for row in history_rows(data) if (signal := order_signal(row))]
 
-    def closures(self):
+    def position_events(self):
         data = self._fetch("position-history", {"pageNumber": 1, "pageSize": 50, "sort": "CLOSING"})
+        closes, partials = [], []
         for row in history_rows(data):
-            if row.get("status") != "All Closed":
+            status = row.get("status")
+            if status not in ("All Closed", "Partially Closed"):
                 continue
             ident, symbol, opened, closed = (row.get(key) for key in ("positionId", "symbol", "opened", "closed"))
             leg = str(row.get("side", "")).upper()
+            if status == "Partially Closed":
+                updated = row.get("updateTime")
+                if (row.get("type") == "UM" and closed is None and isinstance(symbol, str)
+                        and leg in ("LONG", "SHORT") and ident is not None
+                        and type(opened) is int and type(updated) is int and 0 < opened <= updated):
+                    try:
+                        peak, volume = decimal(row.get("maxOpenInterest")), decimal(row.get("closedVolume"))
+                    except ProbeError:
+                        continue
+                    if peak is not None and volume is not None and peak > 0 and volume > 0:
+                        partials.append(PartialPosition(str(ident), symbol, leg, opened, updated, peak, volume))
+                continue
             if not isinstance(symbol, str) or leg not in ("LONG", "SHORT") or ident is None:
                 raise ProbeError("malformed closed position")
             if type(opened) is not int or type(closed) is not int or not 0 < opened <= closed:
                 raise ProbeError("invalid closed position timestamps")
-            yield Signal(f"close:{ident}", closed, symbol, leg, "close", Decimal(0), Decimal(0), opened)
+            closes.append(Signal(f"close:{ident}", closed, symbol, leg, "close", Decimal(0), Decimal(0), opened))
+        return closes, partials
+
+    def closures(self):
+        yield from self.position_events()[0]
 
 
 @dataclass(frozen=True)

@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS signals (
     action TEXT NOT NULL, quantity TEXT NOT NULL, price TEXT NOT NULL, opened INTEGER NOT NULL,
     first_seen INTEGER NOT NULL, portfolio TEXT
 );
+CREATE TABLE IF NOT EXISTS lead_partial_positions (
+    portfolio TEXT NOT NULL, identity TEXT NOT NULL, symbol TEXT NOT NULL, leg TEXT NOT NULL,
+    opened INTEGER NOT NULL, updated INTEGER NOT NULL, peak TEXT NOT NULL, closed_volume TEXT NOT NULL,
+    PRIMARY KEY (portfolio, identity)
+);
 CREATE TABLE IF NOT EXISTS telegram_lead_fills (
     signal TEXT PRIMARY KEY REFERENCES signals(identity)
 );
@@ -92,6 +97,8 @@ class Store:
             self.db.execute("CREATE INDEX IF NOT EXISTS portfolio_closes ON signals (portfolio, symbol, leg, time) "
                             "WHERE action = 'close'")
             self.db.execute("DROP INDEX IF EXISTS source_closes")
+            self.db.execute("CREATE INDEX IF NOT EXISTS lead_fills_by_cycle ON signals (portfolio, symbol, leg, time) "
+                            "WHERE action IN ('increase','decrease')")
             for account in accounts:
                 self.db.execute("INSERT OR IGNORE INTO accounts VALUES (?, ?)", (account, str(starting)))
 
@@ -176,7 +183,7 @@ class Store:
             return portfolio
 
     def ingest(self, signals, accounts, first_seen, *, baseline=False, progress=None, notify_lead_fills=False,
-               execution_modes=(), source=None, observed_times=None):
+               execution_modes=(), source=None, observed_times=None, partial_positions=()):
         added = []
         with self.transaction():
             first_start = int(self.get("service.first_start", first_seen)) if notify_lead_fills else 0
@@ -186,6 +193,13 @@ class Store:
             if source is not None and trader != source:
                 return added
             cutoff = int(self.get("trader.cutoff", 0))
+            self.db.executemany(
+                "INSERT INTO lead_partial_positions VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(portfolio,identity) DO UPDATE SET updated=excluded.updated, "
+                "peak=excluded.peak, closed_volume=excluded.closed_volume WHERE excluded.updated >= updated",
+                ((trader, p.identity, p.symbol, p.leg, p.opened, p.updated, str(p.peak), str(p.closed_volume))
+                 for p in partial_positions if p.updated >= cutoff),
+            )
             draining = self.get("trader.pending") is not None
             namespace = trader != self.get("portfolio")
             paper_cutoffs = {account: int(self.get(f"paper.entry_after.{account}", 0)) for account in accounts}
@@ -231,6 +245,57 @@ class Store:
             "SELECT 1 FROM signals WHERE portfolio=? AND symbol=? AND leg=? AND action='close' "
             "AND opened<=? AND time>=? LIMIT 1",
             (signal.portfolio or self.active_trader(), signal.symbol, signal.leg, signal.time, signal.time),
+        ).fetchone() is not None
+
+    def source_reduction_fraction(self, signal, follower_opened):
+        """Replay source fills from the leader's opening, regardless of follower decisions."""
+        portfolio = signal.portfolio or self.active_trader()
+        cycles = self.db.execute(
+            "SELECT * FROM lead_partial_positions WHERE portfolio=? AND symbol=? AND leg=? "
+            "AND opened<=? AND updated>=?", (portfolio, signal.symbol, signal.leg, follower_opened, signal.time),
+        ).fetchall()
+        if len(cycles) != 1:
+            return None
+        cycle = cycles[0]
+        gap = self.get("orders.gap")
+        if gap:
+            start, separator, end = gap.partition("–")
+            if not separator or not start.isdecimal() or not end.isdecimal():
+                return None
+            if int(start) < cycle["updated"] and int(end) > cycle["opened"]:
+                return None
+        rows = self.db.execute(
+            "SELECT identity,time,action,quantity FROM signals WHERE portfolio=? AND symbol=? AND leg=? "
+            "AND time BETWEEN ? AND ? AND action IN ('increase','decrease') ORDER BY time,rowid",
+            (portfolio, signal.symbol, signal.leg, cycle["opened"], cycle["updated"]),
+        )
+        balance = peak = closed_volume = Decimal(0)
+        fraction = None
+        for row in rows:
+            quantity = Decimal(row["quantity"])
+            if quantity <= 0:
+                return None
+            if row["action"] == "increase":
+                if row["time"] == signal.time:
+                    return None  # Source ordering is ambiguous at the reduction timestamp.
+                balance += quantity
+                peak = max(peak, balance)
+            else:
+                if quantity >= balance:
+                    return None  # Wait for the full-close record when the position could be flat.
+                if row["identity"] == signal.identity:
+                    fraction = quantity / balance
+                balance -= quantity
+                closed_volume += quantity
+        if peak != Decimal(cycle["peak"]) or closed_volume != Decimal(cycle["closed_volume"]):
+            return None
+        return fraction
+
+    def has_prior_reduction(self, account, signal, since):
+        return self.db.execute(
+            "SELECT 1 FROM jobs j JOIN signals s ON s.identity=j.signal WHERE j.account=? AND j.result IS NULL "
+            "AND s.symbol=? AND s.leg=? AND s.action='decrease' AND s.time>=? AND s.time<? LIMIT 1",
+            (account, signal.symbol, signal.leg, since, signal.time),
         ).fetchone() is not None
 
     def done(self, account, signal, result):

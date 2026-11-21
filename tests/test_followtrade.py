@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from followtrade.__main__ import OrderTask, Runner, collect
-from followtrade.clients import BinanceFeed, Model, Quote, ServiceError, Signal
+from followtrade.clients import BinanceFeed, Model, PartialPosition, Quote, ServiceError, Signal
 from followtrade.config import AIConfig, ConfigError, TelegramConfig, load_config
 from followtrade.paper import PaperEngine
 from followtrade.store import Store, utc_day
@@ -58,18 +58,46 @@ class PaperTest(unittest.TestCase):
             self.assertTrue(D(999) < cash < D(1000))
 
     def test_partial_reduce_then_confirmed_close(self):
-        self.entry(observed("open"))
+        opening = observed("open")
+        self.entry(opening)
         initial = D(self.store.positions("fixed")[0]["qty"])
         reduce = observed("reduce", action="decrease", at=NOW, qty="10")
-        close = observed("close", action="close", at=NOW + 1, opened=NOW - 2000)
-        self.store.ingest([reduce, close], ("fixed",), NOW)
+        close = observed("close", action="close", at=NOW + 1, opened=opening.time)
+        self.store.ingest([reduce], ("fixed",), NOW, partial_positions=(
+            PartialPosition("leader-cycle", SYMBOL, reduce.leg, opening.time, reduce.time, D(20), D(10)),
+        ))
         self.engine.process("fixed", reduce, {}, None, NOW)
-        self.assertEqual(len(self.store.pending("fixed")), 2)
+        self.assertEqual(len(self.store.pending("fixed")), 1)
         self.engine.process("fixed", reduce, self.quotes, None, NOW)
         self.assertEqual(D(self.store.positions("fixed")[0]["qty"]), initial / 2)
+        self.store.ingest([close], ("fixed",), NOW + 1)
         self.engine.process("fixed", close, self.quotes, None, NOW + 1)
         self.assertEqual(self.store.positions("fixed"), [])
         self.assertEqual(self.store.pending("fixed"), [])
+
+    def test_position_history_poll_reconciles_reductions_after_an_intervening_add(self):
+        opening = observed("cycle-open", at=NOW - 6000, qty="100")
+        first = observed("first-reduction", action="decrease", at=NOW - 4000, qty="20")
+        addition = observed("intervening-add", at=NOW - 2000, qty="30")
+        second = observed("second-reduction", action="decrease", at=NOW - 1000, qty="80")
+        self.store.ingest([opening, first, addition, second], (), NOW, baseline=True)
+        runner = Runner(self.cfg, self.store, Mock())
+        reply = {"total": 1, "list": [{
+            "positionId": "cycle", "symbol": SYMBOL, "type": "UM", "side": "Short", "status": "Partially Closed",
+            "opened": opening.time, "closed": None, "updateTime": second.time,
+            "maxOpenInterest": "110", "closedVolume": "100",
+        }]}
+        with patch.object(runner.feed, "_fetch", return_value=reply):
+            closes, partials = runner.feed.position_events()
+        self.assertEqual(closes, [])
+        runner.close_task = Future()
+        runner.close_task.set_result((closes, partials, NOW))
+        runner._read_closes(1)
+        self.assertEqual(self.store.source_reduction_fraction(first, opening.time), D(".2"))
+        self.assertEqual(self.store.source_reduction_fraction(second, opening.time), D(80) / D(110))
+        with self.store.transaction():
+            self.store.put("orders.gap", f"{first.time}–{addition.time}")
+        self.assertIsNone(self.store.source_reduction_fraction(second, opening.time))
 
     def test_fixed_follow_adds_to_an_existing_position_within_exposure_cap(self):
         self.entry(observed("open", at=NOW - 5000))
@@ -178,7 +206,9 @@ class PaperTest(unittest.TestCase):
         self.engine.protect(("fixed",), losing, NOW + 1000)
         self.assertEqual(D(self.store.positions("fixed")[0]["qty"]), quantity)
         reduction = observed("leader-reduce", action="decrease", at=NOW + 1000, qty="10")
-        self.store.ingest([reduction], ("fixed",), NOW + 1000)
+        self.store.ingest([reduction], ("fixed",), NOW + 1000, partial_positions=(
+            PartialPosition("leader-cycle", SYMBOL, reduction.leg, opening.time, reduction.time, D(20), D(10)),
+        ))
         self.engine.process("fixed", reduction, losing, None, NOW + 1000)
         self.assertEqual(D(self.store.positions("fixed")[0]["qty"]), quantity / 2)
         closing = observed("leader-close", action="close", at=NOW + 1001, opened=opening.time)

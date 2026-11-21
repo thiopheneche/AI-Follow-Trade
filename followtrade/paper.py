@@ -180,6 +180,9 @@ class PaperEngine:
                 return
             if signal.action == "increase":
                 closed = self.store.has_source_close(signal)
+                if (position and not closed and now - signal.time < cfg.max_age * 1000
+                        and self.store.has_prior_reduction(account, signal, position["last_entry"])):
+                    return
                 if position:
                     observed = Decimal(position["observed_lead_qty"]) + signal.quantity
                     db.execute("UPDATE positions SET observed_lead_qty=? WHERE account=? AND symbol=? AND leg=?",
@@ -208,18 +211,14 @@ class PaperEngine:
             elif signal.action == "close":
                 self._exit(position, quote, ONE, "带单员全平记录", now, signal.identity)
                 result = "filled"
+            elif self.store.has_source_close(signal):
+                result = "superseded by confirmed leader close"
             else:
-                observed = Decimal(position["observed_lead_qty"])
-                if observed <= 0:
-                    result = "leader quantity unknown; wait for closed record"
-                else:
-                    fraction = signal.quantity / observed
-                    # On an estimated zero balance, wait for the separate closed-position record.
-                    fraction = min(fraction, Decimal("0.95"))
-                    self._exit(position, quote, fraction, "按可见成交比例减仓", now, signal.identity)
-                    db.execute("UPDATE positions SET observed_lead_qty=? WHERE account=? AND symbol=? AND leg=?",
-                               (str(max(ZERO, observed - signal.quantity)), *key))
-                    result = "filled"
+                fraction = self.store.source_reduction_fraction(signal, position["opened"])
+                if fraction is None or self.store.has_prior_reduction(account, signal, position["last_entry"]):
+                    return
+                self._exit(position, quote, fraction, "按带单员整轮成交比例减仓", now, signal.identity)
+                result = "filled"
             self.store.put(cursor, signal.time)
             self.store.done(account, signal, result)
 

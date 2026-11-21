@@ -9,7 +9,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from followtrade.binance import BASE_URLS, ExecutionAccount, Futures
-from followtrade.clients import BinanceAPIError, Quote, ServiceError, Signal
+from followtrade.clients import BinanceAPIError, PartialPosition, Quote, ServiceError, Signal
 from followtrade.config import AIConfig, TelegramConfig, load_config
 from followtrade.execution import ExchangeAccount, WAITING_FOR_MODEL, choose_mode
 from followtrade.store import Store, now_ms, utc_day
@@ -604,7 +604,10 @@ class ExecutionTest(TestCase):
         self.observe("old-auto-stop", action="daily_stop")
         self.trader.tick(self.store)
         self.assertEqual(len(self.orders), 1)
-        self.observe("source-reduce", action="decrease", quantity=D(5))
+        reduction = self.observe("source-reduce", action="decrease", quantity=D(5))
+        self.store.ingest([], (), reduction.time, partial_positions=(
+            PartialPosition("leader-cycle", SYMBOL, reduction.leg, opening.time, reduction.time, D(10), D(5)),
+        ))
         self.trader.tick(self.store)
         self.assertEqual(D(self.orders[-1]["quantity"]), initial / 2)
         self.set_position(D(self.trader.owned(self.store)[SYMBOL]["quantity"]))
@@ -615,6 +618,44 @@ class ExecutionTest(TestCase):
         self.assertFalse(self.trader.owned(self.store))
         self.assertEqual([row[0] for row in self.store.db.execute("SELECT action FROM exchange_orders ORDER BY rowid")],
                          ["increase", "decrease", "close"])
+
+    def test_reduction_counts_unfollowed_zec_entries_and_waits_for_reconciled_history(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        stamp = now_ms() - 5000
+        opening = Signal("zec-early-unfollowed", stamp, SYMBOL, "LONG", "increase", D("1133.266"), D(100))
+        copied = Signal("zec-demo-copied", stamp + 1, SYMBOL, "LONG", "increase", D("322.483"), D(100))
+        reduce = Signal("zec-partial", stamp + 2, SYMBOL, "LONG", "decrease", D("727.874"), D(100))
+        pending = Signal("zec-another-add", stamp + 3, SYMBOL, "LONG", "increase", D(50), D(100))
+        history = PartialPosition("zec-cycle", SYMBOL, "LONG", opening.time, reduce.time, D("1455.749"), D("727.874"))
+        self.store.ingest([copied], (), stamp + 1, baseline=True)
+        with self.store.transaction():
+            self.store.db.execute("INSERT INTO exchange_positions VALUES (?,?,?,?,?,?,?,?)",
+                                  ("demo", SYMBOL, "LONG", "4.952", copied.time, copied.time, copied.identity, "322.483"))
+        self.set_position(D("4.952"))
+        self.store.ingest([reduce, pending], (), now_ms(), execution_modes=self.modes, partial_positions=(history,),
+                          progress={"orders.last_end": now_ms(), "feed_status": "正常"})
+        self.trader.tick(self.store)
+        self.assertEqual(self.orders, [])  # Crucially, don't guess using only the copied 322.483.
+        self.store.ingest([opening], (), now_ms(), baseline=True)
+        self.trader.tick(self.store)
+        self.assertEqual(D(self.orders[0]["quantity"]), D("2.475"))  # 2.475998... rounded down to the lot step.
+        self.assertEqual(self.orders[0]["reduceOnly"], "true")
+        self.assertEqual(D(self.trader.owned(self.store)[SYMBOL]["quantity"]), D("2.477"))
+
+    def test_confirmed_full_close_proceeds_when_partial_reduction_is_unverified(self):
+        choose_mode(self.store, self.cfg.execution, "demo")
+        opening = self.observe("before-full-close")
+        self.trader.tick(self.store)
+        full_qty = self.orders[0]["quantity"]
+        self.set_position(full_qty)
+        reduce = Signal("unverified-reduction", opening.time + 1, SYMBOL, "LONG", "decrease", D(8), D(100))
+        full = Signal("confirmed-full-close", opening.time + 2, SYMBOL, "LONG", "close", D(0), D(0), opening.time)
+        self.store.ingest([reduce, full], (), now_ms(), execution_modes=self.modes)
+        self.trader.tick(self.store)
+        self.assertEqual(len(self.orders), 2)
+        self.assertEqual(self.orders[-1]["quantity"], full_qty)
+        self.assertFalse(self.trader.owned(self.store))
+        self.assertFalse(self.store.pending("demo"))
 
     def test_leader_only_fresh_source_entry_is_not_blocked_by_old_auto_stop(self):
         choose_mode(self.store, self.cfg.execution, "demo")

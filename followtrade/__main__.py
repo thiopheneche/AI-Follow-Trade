@@ -40,8 +40,8 @@ def collect(feed, last_end, end, *, include_head=False):
 
 
 def close_batch(feed):
-    signals = list(feed.closures())
-    return signals, now_ms()
+    signals, partials = feed.position_events()
+    return signals, partials, now_ms()
 
 
 class Runner:
@@ -129,7 +129,7 @@ class Runner:
             return
         task, self.close_task = self.close_task, None
         try:
-            signals, seen = task.result()
+            signals, partials, seen = task.result()
         except AccessStopped as error:
             self.access_stopped = True
             self.update("feed_status", "访问被拒绝，等待人工检查后重启")
@@ -142,8 +142,9 @@ class Runner:
             # A paper position can't predate bootstrap for the selected account.
             baseline = int(self.store.get("service.first_start", seen))
             added = self.store.ingest((s for s in signals if s.time >= baseline), self.accounts, seen,
-                                      execution_modes=self.execution_modes, source=self.feed.portfolio)
-            if added:
+                                      execution_modes=self.execution_modes, source=self.feed.portfolio,
+                                      partial_positions=partials)
+            if added or partials:
                 self._wake_execution()
             self.update("close_status", "全平记录正常")
             self.next_close = monotonic + self.config.poll_seconds
