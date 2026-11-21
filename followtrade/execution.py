@@ -114,6 +114,9 @@ class ExchangeAccount:
                     message = format_ai_decision(self.mode, signal, equity, None, "模型响应超时", elapsed,
                                                  trader=store.trader_label(signal.portfolio))
                     store.queue_ai_decision(self.mode, signal, message)
+            if updated.rowcount:
+                logging.warning("AI deadline exceeded mode=%s symbol=%s signal=%s elapsed_seconds=%.3f task_done=%s",
+                                self.mode, signal.symbol, signal.identity, elapsed, task.done())
             if task.done():
                 self.ai_task = None
             return [(s, seen) for s, seen in pending if s.identity != signal.identity]

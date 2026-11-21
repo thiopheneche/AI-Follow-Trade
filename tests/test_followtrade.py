@@ -472,6 +472,53 @@ class ClientsTest(unittest.TestCase):
                 with patch("followtrade.clients.request_json", return_value=result):
                     self.assertEqual(model.decide(context)[0], expected)
 
+    def test_model_reasoning_effort_is_optional_and_forwarded_as_api_parameter(self):
+        config = AIConfig("https://example.test/v1", "test", "private-key", 60, "private profile")
+        result = {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(
+            {"action": "follow", "order_notional_fraction": ".4", "leverage": 3, "reason": "ok"})}}]}
+        for effort in (None, "low", "high", "max", "none"):
+            with self.subTest(effort=effort), \
+                    patch("followtrade.clients.request_json", return_value=result) as api, \
+                    self.assertLogs(level="INFO") as logs:
+                self.assertEqual(Model(replace(config, reasoning_effort=effort)).decide({"symbol": SYMBOL})[:2],
+                                 (D(".4"), 3))
+            body = api.call_args.kwargs["body"]
+            self.assertEqual(body.get("reasoning_effort"), effort)
+            self.assertEqual("reasoning_effort" in body, effort is not None)
+            self.assertEqual(body["model"], "test")
+            self.assertEqual(api.call_args.kwargs["timeout"], 60)
+            self.assertIn("elapsed_seconds=", "\n".join(logs.output))
+            self.assertNotIn("private-key", "\n".join(logs.output))
+            self.assertNotIn("private profile", "\n".join(logs.output))
+
+    def test_model_reasoning_effort_configuration_validation(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        path = Path(temporary.name) / "config.json"
+        raw = {"ai": {"enabled": True, "base_url": "https://example.test/v1", "model": "test",
+                      "trader_profile": "profile"}}
+        for effort in (None, "low", "high", "max", "none", "fast", 1, [], {}):
+            with self.subTest(effort=effort), patch.dict("os.environ", {"FOLLOWTRADE_AI_KEY": "test-key"}):
+                raw["ai"]["reasoning_effort"] = effort
+                path.write_text(json.dumps(raw), encoding="utf-8")
+                if effort is None or effort in ("low", "high", "max", "none"):
+                    self.assertEqual(load_config(path).ai.reasoning_effort, effort)
+                else:
+                    with self.assertRaises(ConfigError):
+                        load_config(path)
+
+    def test_model_failure_log_preserves_error_without_secret_or_prompt(self):
+        config = AIConfig("https://example.test/v1", "test", "private-key", 60, "private profile",
+                          reasoning_effort="low")
+        with patch("followtrade.clients.request_json", side_effect=ServiceError("model API: HTTP 503")), \
+                self.assertLogs(level="WARNING") as logs, self.assertRaises(ServiceError):
+            Model(config).decide({"symbol": SYMBOL})
+        output = "\n".join(logs.output)
+        self.assertIn("elapsed_seconds=", output)
+        self.assertIn("HTTP 503", output)
+        self.assertNotIn("private-key", output)
+        self.assertNotIn("private profile", output)
+
     def test_model_caps_incremental_order_without_subtracting_existing_exposure(self):
         model = Model(AIConfig("https://example.test/v1", "test", "test-key", 5, "profile"))
         context = {"account_equity_usdt": "1000", "current_side_notional_usdt": "300",

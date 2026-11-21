@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import time as clock
 from typing import Optional
 from urllib.error import HTTPError, URLError
@@ -227,13 +228,25 @@ class Model:
 
     def decide(self, context):
         config = self.config
-        result = request_json("model API", config.base_url + "/chat/completions",
-                              headers={"Authorization": "Bearer " + config.token}, timeout=config.timeout,
-                              body={"model": config.model, "messages": [
-                                  {"role": "system", "content": AI_SYSTEM_PROMPT},
-                                  {"role": "user", "content": json.dumps(
-                                      {"trader_profile": config.profile, **context}, ensure_ascii=False, default=str)},
-                              ]})
+        body = {"model": config.model, "messages": [
+            {"role": "system", "content": AI_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(
+                {"trader_profile": config.profile, **context}, ensure_ascii=False, default=str)},
+        ]}
+        if config.reasoning_effort is not None:
+            body["reasoning_effort"] = config.reasoning_effort
+        started = clock.monotonic()
+        logging.info("AI request started model=%s reasoning_effort=%s symbol=%s timeout_seconds=%d prompt_chars=%d",
+                     config.model, config.reasoning_effort or "provider_default", context.get("symbol", "unknown"),
+                     config.timeout, sum(len(m["content"]) for m in body["messages"]))
+        try:
+            result = request_json("model API", config.base_url + "/chat/completions",
+                                  headers={"Authorization": "Bearer " + config.token}, timeout=config.timeout,
+                                  body=body)
+        except ServiceError as error:
+            logging.warning("AI request failed model=%s symbol=%s elapsed_seconds=%.3f error=%s",
+                            config.model, context.get("symbol", "unknown"), clock.monotonic() - started, error)
+            raise
         try:
             output = json.loads(result["choices"][0]["message"]["content"], parse_float=Decimal)
             if not isinstance(output, dict):
@@ -241,6 +254,16 @@ class Model:
             action, reason = output.get("action"), output.get("reason")
             if action not in ("follow", "skip") or not isinstance(reason, str):
                 raise ValueError
+            usage = result.get("usage")
+            usage = usage if isinstance(usage, dict) else {}
+            details = usage.get("completion_tokens_details")
+            details = details if isinstance(details, dict) else {}
+            logging.info("AI response received model=%s symbol=%s elapsed_seconds=%.3f action=%s finish_reason=%s "
+                         "prompt_tokens=%s completion_tokens=%s reasoning_tokens=%s",
+                         config.model, context.get("symbol", "unknown"), clock.monotonic() - started,
+                         action, result["choices"][0].get("finish_reason", "unknown"),
+                         usage.get("prompt_tokens", "unknown"), usage.get("completion_tokens", "unknown"),
+                         details.get("reasoning_tokens", "unknown"))
             if action == "skip":
                 return Decimal(0), 1, reason[:240]
             if "order_notional_fraction" in output:
@@ -269,4 +292,6 @@ class Model:
                 fraction = min(fraction, order_limit)
             return fraction, leverage, reason[:240]
         except (TypeError, ValueError, KeyError, IndexError, ProbeError):
+            logging.warning("AI response invalid model=%s symbol=%s elapsed_seconds=%.3f",
+                            config.model, context.get("symbol", "unknown"), clock.monotonic() - started)
             raise ServiceError("model API: invalid decision") from None

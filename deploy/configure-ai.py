@@ -27,8 +27,9 @@ def environment_text(original, key):
     return with_environment(original, {KEY: key})
 
 
-def validate_model(base_url, model, key, timeout):
-    test = AIConfig(base_url, model, key, timeout, "Synthetic connectivity check. There is no eligible signal.")
+def validate_model(base_url, model, key, timeout, reasoning_effort=None):
+    test = AIConfig(base_url, model, key, timeout, "Synthetic connectivity check. There is no eligible signal.",
+                    reasoning_effort=reasoning_effort)
     Model(test).decide({"signal": None, "account_equity_usdt": "1000", "max_leverage": 3})
 
 
@@ -75,7 +76,7 @@ def configure():
     if not re.fullmatch(r"[!-~]+", key):
         raise SystemExit("API Key 为空或含无效字符。")
     print("正在从 VPS 验证模型响应……", flush=True)
-    validate_model(base_url, model, key, ai.get("timeout_seconds", 60))
+    validate_model(base_url, model, key, ai.get("timeout_seconds", 60), ai.get("reasoning_effort"))
 
     original_env = env_path.read_text(encoding="utf-8") if env_path.exists() else None
     ai.update(enabled=True, base_url=base_url, model=model)

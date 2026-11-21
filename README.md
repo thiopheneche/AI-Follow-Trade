@@ -41,6 +41,8 @@
 
 `max_entry_deviation_fraction` 设置相对带单成交价的不利入场价差上限。可在 `execution.demo` 或 `execution.mainnet` 下单独设置。用 `/mode` 查看各币安账户的生效值。
 
+DeepSeek 可设置 `ai.reasoning_effort` 为 `low`，减少思考耗时；`null` 使用服务商默认值，官方 DeepSeek 默认为 `high`。该参数直接传给 API，无需给模型名添加 `-fast`。程序记录请求开始、响应耗时和失败原因。
+
 AI 的 `ai.position_limits_enabled` 设为 `false` 时，开仓金额和新仓杠杆由模型判断，取消额外的单笔、单标的、总敞口、保证金占用及杠杆上限。程序读取币安合约档位，按实际可用保证金和交易规则执行；已有仓位加仓沿用当前合约杠杆，价格保护继续生效。
 
 `exit_policy` 设为 `leader_only` 时，币安跟单和本地模拟只跟随带单员减仓、全平，不按自身浮亏或日亏损主动退出。设为 `protected` 则额外启用 `position_stop_fraction` 和 `daily_loss_fraction`。用 `/mode` 查看当前退出策略；币安强平不受该配置控制。

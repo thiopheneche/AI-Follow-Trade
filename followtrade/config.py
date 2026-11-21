@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+from typing import Optional
 from urllib.parse import urlsplit
 
 from probe import portfolio_id
@@ -23,6 +24,7 @@ class AIConfig:
     timeout: int
     profile: str
     position_limits_enabled: bool = True
+    reasoning_effort: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -134,9 +136,12 @@ def load_config(path):
         url = urlsplit(base_url)
         if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise ConfigError("ai.base_url must be an HTTPS API base URL")
+        effort = ai_raw.get("reasoning_effort")
+        if effort is not None and effort not in ("none", "low", "high", "max"):
+            raise ConfigError("ai.reasoning_effort must be null, none, low, high or max")
         ai = AIConfig(base_url.rstrip("/"), model, token,
                       integer_setting(ai_raw, "timeout_seconds", 60, 1, 180), profile,
-                      enabled(ai_raw, "position_limits_enabled", True))
+                      enabled(ai_raw, "position_limits_enabled", True), effort)
     chat = tg_raw.get("chat_id")
     if chat is not None:
         token = os.getenv("FOLLOWTRADE_TELEGRAM_TOKEN", "")

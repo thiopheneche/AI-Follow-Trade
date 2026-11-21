@@ -662,6 +662,28 @@ class ExecutionTest(TestCase):
         self.assertEqual(len(self.orders), 2)
         self.assertFalse(self.trader.owned(self.store))
 
+    def test_model_deadline_is_logged_once_and_late_answer_does_not_submit_order(self):
+        self.managed_ai()
+        future = Future()
+        self.trader.model_pool = Mock()
+        self.trader.model_pool.submit.return_value = future
+        signal = self.observe("slow-model")
+        with patch("followtrade.execution.time.monotonic", return_value=0):
+            self.trader.tick(self.store)
+        with patch("followtrade.execution.time.monotonic", return_value=61), \
+                self.assertLogs(level="WARNING") as logs:
+            self.trader.tick(self.store)
+        self.assertIn("AI deadline exceeded mode=demo", "\n".join(logs.output))
+        self.assertIn("task_done=False", "\n".join(logs.output))
+        self.assertEqual(self.store.db.execute(
+            "SELECT result FROM jobs WHERE account='demo' AND signal=?", (signal.identity,)).fetchone()[0],
+            "model deadline exceeded")
+        future.set_result((D(".4"), 3, "late answer"))
+        with patch("followtrade.execution.time.monotonic", return_value=62):
+            self.trader.tick(self.store)
+        self.assertEqual(self.orders, [])
+        self.assertFalse(self.store.pending("demo"))
+
     def test_signed_requests_use_each_accounts_host_and_key(self):
         with patch("followtrade.binance.request_json", return_value={}) as request:
             Futures("demo", "demo-key", "secret").signed("/fapi/v1/order/test", "POST")
