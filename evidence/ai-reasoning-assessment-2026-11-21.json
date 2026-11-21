@@ -1,0 +1,458 @@
+{
+  "assessmentCreatedAt": "2026-11-21T03:37:56.458869+00:00",
+  "resultsSource": "evidence/ai-reasoning-results-2026-11-21.json",
+  "casesSource": "evidence/ai-reasoning-cases-2026-11-21.json",
+  "resultsSha256": "d8c2a9a4fa572421f119cd0a4b7e086afda73c55b82b01478a3e07d3cce61d53",
+  "periodBeijing": {
+    "start": "2026-11-21T11:32:21.255023+08:00",
+    "end": "2026-11-21T11:35:11.858352+08:00"
+  },
+  "sample": {
+    "uniqueHistoricalSignals": 6,
+    "initialEntries": 3,
+    "additions": 3,
+    "efforts": [
+      "low",
+      "high"
+    ],
+    "repeatsEach": 2,
+    "modelApiRequests": 24,
+    "ordersSubmitted": 0
+  },
+  "timing": {
+    "meanLowSeconds": 10.163191666666666,
+    "meanHighSeconds": 17.346375000000002,
+    "lowLatencyReductionPercent": 41.4102850499504
+  },
+  "summary": {
+    "byEffort": {
+      "low": {
+        "requests": 12,
+        "completed": 12,
+        "validJson": 12,
+        "validSchema": 12,
+        "validModelDecisions": 12,
+        "validWithin60Seconds": 12,
+        "observedDeadlineMisses": 0,
+        "apiErrors": 0,
+        "violations": 0,
+        "completedLatencySeconds": {
+          "n": 12,
+          "mean": 10.163191666666666,
+          "median": 9.591899999999999,
+          "min": 6.1376,
+          "max": 15.5147
+        },
+        "reasoningTokens": {
+          "n": 12,
+          "mean": 1378.3333333333333,
+          "median": 1271.0,
+          "min": 827,
+          "max": 2145
+        }
+      },
+      "high": {
+        "requests": 12,
+        "completed": 12,
+        "validJson": 12,
+        "validSchema": 12,
+        "validModelDecisions": 12,
+        "validWithin60Seconds": 12,
+        "observedDeadlineMisses": 0,
+        "apiErrors": 0,
+        "violations": 0,
+        "completedLatencySeconds": {
+          "n": 12,
+          "mean": 17.346375000000002,
+          "median": 17.0804,
+          "min": 8.9486,
+          "max": 27.7816
+        },
+        "reasoningTokens": {
+          "n": 12,
+          "mean": 2565.1666666666665,
+          "median": 2465.0,
+          "min": 964,
+          "max": 4341
+        }
+      }
+    },
+    "lowVsHigh": {
+      "comparablePairs": 12,
+      "sameFollowSkip": 12,
+      "bothFollowPairs": 12,
+      "absoluteNotionalFractionDifferencePercentagePoints": {
+        "n": 12,
+        "mean": 6.666666666666667,
+        "median": 5.0,
+        "min": 0.0,
+        "max": 20.0
+      },
+      "absoluteRequestedLeverageDifference": {
+        "n": 12,
+        "mean": 0.9166666666666666,
+        "median": 0.0,
+        "min": 0,
+        "max": 5
+      },
+      "sameRequestedLeverage": 9,
+      "exactValuesExcludingReason": 4
+    },
+    "repeatVariability": {
+      "low": {
+        "comparablePairs": 6,
+        "sameFollowSkip": 6,
+        "bothFollowPairs": 6,
+        "absoluteNotionalFractionDifferencePercentagePoints": {
+          "n": 6,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 0.0,
+          "max": 10.0
+        },
+        "absoluteRequestedLeverageDifference": {
+          "n": 6,
+          "mean": 1,
+          "median": 0.0,
+          "min": 0,
+          "max": 5
+        },
+        "sameRequestedLeverage": 4,
+        "exactValuesExcludingReason": 1
+      },
+      "high": {
+        "comparablePairs": 6,
+        "sameFollowSkip": 6,
+        "bothFollowPairs": 6,
+        "absoluteNotionalFractionDifferencePercentagePoints": {
+          "n": 6,
+          "mean": 8.333333333333334,
+          "median": 5.0,
+          "min": 0.0,
+          "max": 20.0
+        },
+        "absoluteRequestedLeverageDifference": {
+          "n": 6,
+          "mean": 0.8333333333333334,
+          "median": 0.0,
+          "min": 0,
+          "max": 5
+        },
+        "sameRequestedLeverage": 5,
+        "exactValuesExcludingReason": 2
+      }
+    }
+  },
+  "perCase": [
+    {
+      "caseId": "nvda-initial",
+      "symbol": "NVDAUSDT",
+      "phase": "initial",
+      "signalTimeBeijing": "2026-11-18T03:08:08.793000+08:00",
+      "followerScenario": {
+        "equityUsdt": "1000",
+        "existingSideNotionalUsdt": "0",
+        "availableBalanceUsdt": "1000",
+        "existingContractLeverage": null
+      },
+      "low": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 10,
+          "effectiveExecutionLeverage": 10,
+          "elapsedSeconds": 6.7708
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "40.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 6.1376
+        }
+      ],
+      "high": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "20.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 23.521
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "40.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 17.6457
+        }
+      ]
+    },
+    {
+      "caseId": "nvda-late-add",
+      "symbol": "NVDAUSDT",
+      "phase": "addition",
+      "signalTimeBeijing": "2026-11-18T04:36:31.018000+08:00",
+      "followerScenario": {
+        "equityUsdt": "1000",
+        "existingSideNotionalUsdt": "1333.417387480193333333333333",
+        "availableBalanceUsdt": "733.3165225039613333333333334",
+        "existingContractLeverage": 5
+      },
+      "low": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 7.9904
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 9.6245
+        }
+      ],
+      "high": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 19.8575
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "50.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 12.3265
+        }
+      ]
+    },
+    {
+      "caseId": "mu-initial",
+      "symbol": "MUUSDT",
+      "phase": "initial",
+      "signalTimeBeijing": "2026-11-20T21:45:29.233000+08:00",
+      "followerScenario": {
+        "equityUsdt": "1000",
+        "existingSideNotionalUsdt": "0",
+        "availableBalanceUsdt": "1000",
+        "existingContractLeverage": null
+      },
+      "low": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "40.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 9.3617
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "35.00",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 12.9673
+        }
+      ],
+      "high": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "40.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 14.0705
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "40.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 9.6372
+        }
+      ]
+    },
+    {
+      "caseId": "mu-late-add",
+      "symbol": "MUUSDT",
+      "phase": "addition",
+      "signalTimeBeijing": "2026-11-20T21:47:08.266000+08:00",
+      "followerScenario": {
+        "equityUsdt": "1000",
+        "existingSideNotionalUsdt": "997.4101790077307440628565732",
+        "availableBalanceUsdt": "800.5179641984538511874286854",
+        "existingContractLeverage": 5
+      },
+      "low": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 15.5147
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "25.00",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 10.3202
+        }
+      ],
+      "high": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.00",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 16.5151
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 13.7094
+        }
+      ]
+    },
+    {
+      "caseId": "zec-initial",
+      "symbol": "ZECUSDT",
+      "phase": "initial",
+      "signalTimeBeijing": "2026-11-14T21:03:59.800000+08:00",
+      "followerScenario": {
+        "equityUsdt": "1000",
+        "existingSideNotionalUsdt": "0",
+        "availableBalanceUsdt": "1000",
+        "existingContractLeverage": null
+      },
+      "low": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 10,
+          "effectiveExecutionLeverage": 10,
+          "elapsedSeconds": 9.4404
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "35.00",
+          "requestedLeverage": 10,
+          "effectiveExecutionLeverage": 10,
+          "elapsedSeconds": 9.5593
+        }
+      ],
+      "high": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "25.00",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 23.1504
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "20.0",
+          "requestedLeverage": 10,
+          "effectiveExecutionLeverage": 10,
+          "elapsedSeconds": 8.9486
+        }
+      ]
+    },
+    {
+      "caseId": "zec-latest-add-low-free-margin",
+      "symbol": "ZECUSDT",
+      "phase": "addition",
+      "signalTimeBeijing": "2026-11-21T10:59:18.845000+08:00",
+      "followerScenario": {
+        "equityUsdt": "1000",
+        "existingSideNotionalUsdt": "3200",
+        "availableBalanceUsdt": "200",
+        "existingContractLeverage": 5
+      },
+      "low": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "30.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 11.1261
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "25.00",
+          "requestedLeverage": 4,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 13.1453
+        }
+      ],
+      "high": [
+        {
+          "repeat": 1,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "15.00",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 27.7816
+        },
+        {
+          "repeat": 2,
+          "action": "follow",
+          "orderNotionalPercentOfEquity": "20.0",
+          "requestedLeverage": 5,
+          "effectiveExecutionLeverage": 5,
+          "elapsedSeconds": 20.993
+        }
+      ]
+    }
+  ],
+  "manualReview": [
+    {
+      "caseId": "zec-latest-add-low-free-margin",
+      "effort": "low",
+      "repeat": 2,
+      "finding": "The final rationale called the existing leverage approximately 4x. In the test scenario the retained contract leverage was 5x; 4x equals total notional / equity (4000 / 1000), which is account effective leverage, not contract configured leverage.",
+      "sourceQuote": "已有ZEC空头3200U、总敞口4000U，权益1000U，可用保证金仅200U；按历史弱先验和现有约4倍杠杆，仅加250U（权益25%），保留后续加仓保证金。",
+      "scope": "The prompt did not explicitly provide current contract leverage. This exposes an ambiguity in the input and an unsupported inference by this response; it does not establish a general low-vs-high error rate.",
+      "executionImpact": "The existing executor retains actual contract leverage on additions. For this scenario both efforts would execute with 5x regardless of the model requested value."
+    },
+    {
+      "finding": "Same-effort stochastic variability is material: NVDA initial high changed from 20% to 40%, and NVDA addition high from 30% to 50%. Higher effort did not produce identical repeated decisions.",
+      "scope": "Two repeats per case are insufficient for statistical claims about relative stability."
+    }
+  ],
+  "conclusions": {
+    "jsonStructure": "All 24 responses passed the same strict four-field schema and the production parser.",
+    "numericEquality": "Only 4 of 12 paired decisions matched in both notional fraction and requested leverage (rationale text excluded).",
+    "checkedConstraints": "No proposed order breached the tested available-margin, minimum-notional, or parser leverage bounds. This is not a comprehensive execution or trading-quality guarantee.",
+    "profitability": "No profitability comparison was performed. Historical follower account and bid/ask snapshots were unavailable; current profile and prior introduce hindsight for old signals.",
+    "recommendation": "Low is faster in this pilot. These results do not establish equal decision quality or superior profitability for either setting. Current production settings were not changed."
+  }
+}

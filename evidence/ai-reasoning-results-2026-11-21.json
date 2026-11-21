@@ -1,0 +1,1035 @@
+{
+  "startedAt": "2026-11-21T03:32:21.255023+00:00",
+  "evaluationOnly": true,
+  "ordersSubmitted": 0,
+  "casesSha256": "eeb563fa5b7f1371020b7044b88309593728953bb28d8f6a818aaeef452f8aac",
+  "model": "deepseek-flash",
+  "systemPromptSha256": "8fa8af817df3915664fa2780f8d813c34b2b0de34e83e4e080adcabb93654494",
+  "repeats": 2,
+  "workers": 2,
+  "wallTimeoutSeconds": 92,
+  "productionTimeoutSeconds": 60,
+  "methodology": {
+    "signals": "Six actual stored/public Binance lead increases: three initial entries and three additions across NVDA, MU, ZEC.",
+    "accountScenarios": "All follower balances, holdings and margin are explicitly reconstructed scenarios, not recorded historical account snapshots.",
+    "additionScenarios": "NVDA/MU existing exposure follows cumulative previous source notionals under the already labeled capital assumptions. ZEC has 80% assumed margin used to test a tighter available-balance case.",
+    "frozenInputs": "Same model, system prompt, profile, prior, quote, account scenario and API parameters for each pair; only reasoning_effort differs.",
+    "priorTiming": "Current cached historical prior and profile are used for all cases. They include information unavailable at some signal dates. This is a retrospective decision comparison, not a historical performance backtest.",
+    "rulesTiming": "Leverage brackets and minimum notionals are current Binance Demo GET responses; historical rule snapshots are unavailable.",
+    "sampling": "Two requests per case and effort (24 total), seed-shuffled order, at most two concurrent HTTP requests. No temperature or seed sent because thinking mode does not support deterministic sampling.",
+    "deadline": "Observe replies up to 90 seconds (+2 second subprocess allowance), separately count valid replies within the production 60-second deadline.",
+    "quality": "Check JSON schema, production parser acceptance, proposed margin feasibility, decision agreement and repeat variability. High is a comparator, not ground truth; no profitability score is inferred.",
+    "execution": "No Binance POST requests, configuration changes, service restarts or history replays into the running bot.",
+    "uncertainty": "Small sample; provider load and input cache hits can differ. Proposed oversizing is counted before the executor's normal quantity clipping."
+  },
+  "runs": [
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 5,
+        "reason": "已有同向敞口约1333U；按现有5倍杠杆小幅加仓300U，保证金约60U，可用余额充足，总名义仍低于档位上限，并为后续加仓留空间；NVDA近期样本少，偏保守。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5493,
+        "completion_tokens": 1067,
+        "total_tokens": 6560,
+        "prompt_tokens_details": {
+          "cached_tokens": 768
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 989
+        },
+        "prompt_cache_hit_tokens": 768,
+        "prompt_cache_miss_tokens": 4725
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.15000",
+      "status": "completed",
+      "elapsedSeconds": 7.9904,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-late-add",
+      "repeat": 1,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:32:29.357003+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.4",
+        "leverage": 5,
+        "reason": "按近期MU首单约40%权益作弱先验，账户仅1000U；5倍杠杆下名义400U，保证金约80U，满足最小10U及档位限制，并为后续加仓留出空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5632,
+        "completion_tokens": 1328,
+        "total_tokens": 6960,
+        "prompt_tokens_details": {
+          "cached_tokens": 4608
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1254
+        },
+        "prompt_cache_hit_tokens": 4608,
+        "prompt_cache_miss_tokens": 1024
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.4",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "80.20000",
+      "status": "completed",
+      "elapsedSeconds": 9.3617,
+      "withinProductionDeadline": true,
+      "caseId": "mu-initial",
+      "repeat": 1,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:32:38.820655+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.2",
+        "leverage": 5,
+        "reason": "新仓无同向敞口；NVDA近期首单约峰值14%，按0.2权益约200U试探，5倍杠杆，保留后续加仓空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5453,
+        "completion_tokens": 3641,
+        "total_tokens": 9094,
+        "prompt_tokens_details": {
+          "cached_tokens": 768
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3580
+        },
+        "prompt_cache_hit_tokens": 768,
+        "prompt_cache_miss_tokens": 4685
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.2",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "40.10000",
+      "status": "completed",
+      "elapsedSeconds": 23.521,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-initial",
+      "repeat": 1,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:32:44.875498+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 5,
+        "reason": "已有同向空头约3200U，权益1000U、可用200U；按历史加仓中位数并预留后续加仓，增量约300U，沿用约5倍现有杠杆。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5476,
+        "completion_tokens": 1700,
+        "total_tokens": 7176,
+        "prompt_tokens_details": {
+          "cached_tokens": 4608
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1633
+        },
+        "prompt_cache_hit_tokens": 4608,
+        "prompt_cache_miss_tokens": 868
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.15000",
+      "status": "completed",
+      "elapsedSeconds": 11.1261,
+      "withinProductionDeadline": true,
+      "caseId": "zec-latest-add-low-free-margin",
+      "repeat": 1,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:32:50.049363+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.4",
+        "leverage": 5,
+        "reason": "账户权益1000U且无同向敞口；参考MU新轮首仓约40%权益，5倍杠杆试仓约400U名义，保证金约80U，保留后续加仓空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5632,
+        "completion_tokens": 2157,
+        "total_tokens": 7789,
+        "prompt_tokens_details": {
+          "cached_tokens": 4608
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2089
+        },
+        "prompt_cache_hit_tokens": 4608,
+        "prompt_cache_miss_tokens": 1024
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.4",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "80.20000",
+      "status": "completed",
+      "elapsedSeconds": 14.0705,
+      "withinProductionDeadline": true,
+      "caseId": "mu-initial",
+      "repeat": 1,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:33:04.263788+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.15",
+        "leverage": 5,
+        "reason": "ZEC空头信号新鲜且价差小；已有同向敞口3200U、总敞口4000U、可用200U，按现有约5倍杠杆仅加150U（约30U保证金），为后续加仓和缓冲留出空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5476,
+        "completion_tokens": 4422,
+        "total_tokens": 9898,
+        "prompt_tokens_details": {
+          "cached_tokens": 4608
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4341
+        },
+        "prompt_cache_hit_tokens": 4608,
+        "prompt_cache_miss_tokens": 868
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.15",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "30.075000",
+      "status": "completed",
+      "elapsedSeconds": 27.7816,
+      "withinProductionDeadline": true,
+      "caseId": "zec-latest-add-low-free-margin",
+      "repeat": 1,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:33:12.944067+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 10,
+        "reason": "无同向敞口；参考近期首仓约0.3-0.4权益的偏保守增量，10倍杠杆下保证金约30U，留出后续加仓空间且满足最小名义与档位限制。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5453,
+        "completion_tokens": 943,
+        "total_tokens": 6396,
+        "prompt_tokens_details": {
+          "cached_tokens": 4864
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 871
+        },
+        "prompt_cache_hit_tokens": 4864,
+        "prompt_cache_miss_tokens": 589
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 10,
+      "effectiveExecutionLeverage": 10,
+      "estimatedMarginPlusFeeUsdt": "30.15000",
+      "status": "completed",
+      "elapsedSeconds": 6.7708,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-initial",
+      "repeat": 1,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:33:19.821135+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.30",
+        "leverage": 5,
+        "reason": "同向已有约997U敞口，权益1000U、可用保证金约800U；按历史加仓中位偏保守取30%权益新增，保留后续加仓空间，沿用现有约5倍杠杆。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5671,
+        "completion_tokens": 2252,
+        "total_tokens": 7923,
+        "prompt_tokens_details": {
+          "cached_tokens": 5120
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2181
+        },
+        "prompt_cache_hit_tokens": 5120,
+        "prompt_cache_miss_tokens": 551
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.30",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.150000",
+      "status": "completed",
+      "elapsedSeconds": 16.5151,
+      "withinProductionDeadline": true,
+      "caseId": "mu-late-add",
+      "repeat": 1,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:33:20.897671+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 5,
+        "reason": "已有约1倍同向敞口，按约5倍杠杆小幅加仓，保留可用保证金与后续加仓空间"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5671,
+        "completion_tokens": 2195,
+        "total_tokens": 7866,
+        "prompt_tokens_details": {
+          "cached_tokens": 5120
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2145
+        },
+        "prompt_cache_hit_tokens": 5120,
+        "prompt_cache_miss_tokens": 551
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.15000",
+      "status": "completed",
+      "elapsedSeconds": 15.5147,
+      "withinProductionDeadline": true,
+      "caseId": "mu-late-add",
+      "repeat": 1,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:33:35.446604+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 5,
+        "reason": "已有多头约1.33倍权益；按近期加仓样本弱先验，以0.3倍权益增量跟进，沿用现有5倍杠杆，并为后续加仓保留保证金。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5493,
+        "completion_tokens": 3106,
+        "total_tokens": 8599,
+        "prompt_tokens_details": {
+          "cached_tokens": 4864
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3041
+        },
+        "prompt_cache_hit_tokens": 4864,
+        "prompt_cache_miss_tokens": 629
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.15000",
+      "status": "completed",
+      "elapsedSeconds": 19.8575,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-late-add",
+      "repeat": 1,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:33:40.849155+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 10,
+        "reason": "ZEC同向首单，按近期同标的首仓约0.33权益的弱先验略降至0.30，10倍杠杆留足后续加仓保证金。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5470,
+        "completion_tokens": 1350,
+        "total_tokens": 6820,
+        "prompt_tokens_details": {
+          "cached_tokens": 4864
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1288
+        },
+        "prompt_cache_hit_tokens": 4864,
+        "prompt_cache_miss_tokens": 606
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 10,
+      "effectiveExecutionLeverage": 10,
+      "estimatedMarginPlusFeeUsdt": "30.15000",
+      "status": "completed",
+      "elapsedSeconds": 9.4404,
+      "withinProductionDeadline": true,
+      "caseId": "zec-initial",
+      "repeat": 1,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:33:45.006788+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.25",
+        "leverage": 5,
+        "reason": "ZEC同币近样本初始约33%但样本少；按25%权益试仓、5倍杠杆，控制风险并留出后续加仓空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5470,
+        "completion_tokens": 3584,
+        "total_tokens": 9054,
+        "prompt_tokens_details": {
+          "cached_tokens": 4864
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3525
+        },
+        "prompt_cache_hit_tokens": 4864,
+        "prompt_cache_miss_tokens": 606
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.25",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "50.125000",
+      "status": "completed",
+      "elapsedSeconds": 23.1504,
+      "withinProductionDeadline": true,
+      "caseId": "zec-initial",
+      "repeat": 1,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:34:04.098022+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.2",
+        "leverage": 5,
+        "reason": "已有同向空头3200U，权益1000U、可用200U；按该币近30日加仓先验约16.7%并留后续加仓空间，增量约200U，沿用现有约5倍杠杆，保证金约40U，满足最小下单与档位要求。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5476,
+        "completion_tokens": 3363,
+        "total_tokens": 8839,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3274
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 228
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.2",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "40.10000",
+      "status": "completed",
+      "elapsedSeconds": 20.993,
+      "withinProductionDeadline": true,
+      "caseId": "zec-latest-add-low-free-margin",
+      "repeat": 2,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:34:06.092235+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.4",
+        "leverage": 5,
+        "reason": "按MU最近首单约40%权益的弱先验，账户1000U，本单名义约400U；杠杆取历史中位5倍，并为后续加仓保留保证金。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5632,
+        "completion_tokens": 1373,
+        "total_tokens": 7005,
+        "prompt_tokens_details": {
+          "cached_tokens": 5376
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1308
+        },
+        "prompt_cache_hit_tokens": 5376,
+        "prompt_cache_miss_tokens": 256
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.4",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "80.20000",
+      "status": "completed",
+      "elapsedSeconds": 9.6372,
+      "withinProductionDeadline": true,
+      "caseId": "mu-initial",
+      "repeat": 2,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:34:13.852874+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.4",
+        "leverage": 5,
+        "reason": "无现有敞口；参考近期首单比例约0.4，取400U名义仓位并留后续加仓空间，5倍杠杆保证金约80U，满足最小下单和档位限制。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5453,
+        "completion_tokens": 2816,
+        "total_tokens": 8269,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2749
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 205
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.4",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "80.20000",
+      "status": "completed",
+      "elapsedSeconds": 17.6457,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-initial",
+      "repeat": 2,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:34:23.836071+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.5",
+        "leverage": 5,
+        "reason": "按现有约5倍杠杆追加0.5倍权益（约500 USDT），已计入现有同向敞口，保证金充足并预留后续加仓空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5493,
+        "completion_tokens": 1902,
+        "total_tokens": 7395,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1843
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 245
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.5",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "100.25000",
+      "status": "completed",
+      "elapsedSeconds": 12.3265,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-late-add",
+      "repeat": 2,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:34:26.277691+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.4",
+        "leverage": 5,
+        "reason": "账户无同向敞口；参考近期首仓约0.4权益比例，按1000USDT权益下约400USDT名义、5倍杠杆，保证金约80USDT，可保留后续加仓空间且满足最小下单与档位限制。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5453,
+        "completion_tokens": 907,
+        "total_tokens": 6360,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 827
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 205
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.4",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "80.20000",
+      "status": "completed",
+      "elapsedSeconds": 6.1376,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-initial",
+      "repeat": 2,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:34:30.095457+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.35",
+        "leverage": 5,
+        "reason": "跟随首笔建仓，参考历史首单比例约0.35，采用5倍杠杆，为后续加仓预留空间"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5632,
+        "completion_tokens": 1916,
+        "total_tokens": 7548,
+        "prompt_tokens_details": {
+          "cached_tokens": 5376
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1865
+        },
+        "prompt_cache_hit_tokens": 5376,
+        "prompt_cache_miss_tokens": 256
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.35",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "70.175000",
+      "status": "completed",
+      "elapsedSeconds": 12.9673,
+      "withinProductionDeadline": true,
+      "caseId": "mu-initial",
+      "repeat": 2,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:34:39.335138+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.25",
+        "leverage": 5,
+        "reason": "已有同向约997U、约5倍杠杆；可用保证金充足，按权益25%增量加仓，保留后续加仓空间"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5671,
+        "completion_tokens": 1376,
+        "total_tokens": 7047,
+        "prompt_tokens_details": {
+          "cached_tokens": 5504
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1323
+        },
+        "prompt_cache_hit_tokens": 5504,
+        "prompt_cache_miss_tokens": 167
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.25",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "50.125000",
+      "status": "completed",
+      "elapsedSeconds": 10.3202,
+      "withinProductionDeadline": true,
+      "caseId": "mu-late-add",
+      "repeat": 2,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:34:40.507823+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.35",
+        "leverage": 10,
+        "reason": "跟随做空；按1000U权益以约35%名义（350U）、10倍杠杆建仓，保证金约35U，符合档位与可用资金限制，并为后续加仓留出空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5470,
+        "completion_tokens": 1316,
+        "total_tokens": 6786,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1247
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 222
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.35",
+      "requestedLeverage": 10,
+      "effectiveExecutionLeverage": 10,
+      "estimatedMarginPlusFeeUsdt": "35.175000",
+      "status": "completed",
+      "elapsedSeconds": 9.5593,
+      "withinProductionDeadline": true,
+      "caseId": "zec-initial",
+      "repeat": 2,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:34:48.988624+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 5,
+        "reason": "已有同向敞口约1.33倍权益；按5倍杠杆小幅加仓0.3倍权益（约300U，保证金约60U），保留可用保证金及后续加仓空间，满足最小名义与档位要求。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5493,
+        "completion_tokens": 1298,
+        "total_tokens": 6791,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1223
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 245
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.15000",
+      "status": "completed",
+      "elapsedSeconds": 9.6245,
+      "withinProductionDeadline": true,
+      "caseId": "nvda-late-add",
+      "repeat": 2,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:34:50.225753+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.3",
+        "leverage": 5,
+        "reason": "已有同向敞口约1.0倍权益，按近期加仓中位数追加0.3倍权益，保留可用保证金应对后续加仓。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5671,
+        "completion_tokens": 1944,
+        "total_tokens": 7615,
+        "prompt_tokens_details": {
+          "cached_tokens": 5504
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1887
+        },
+        "prompt_cache_hit_tokens": 5504,
+        "prompt_cache_miss_tokens": 167
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.3",
+      "requestedLeverage": 5,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "60.15000",
+      "status": "completed",
+      "elapsedSeconds": 13.7094,
+      "withinProductionDeadline": true,
+      "caseId": "mu-late-add",
+      "repeat": 2,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:35:02.800378+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.25",
+        "leverage": 4,
+        "reason": "已有ZEC空头3200U、总敞口4000U，权益1000U，可用保证金仅200U；按历史弱先验和现有约4倍杠杆，仅加250U（权益25%），保留后续加仓保证金。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5476,
+        "completion_tokens": 1953,
+        "total_tokens": 7429,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1875
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 228
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.25",
+      "requestedLeverage": 4,
+      "effectiveExecutionLeverage": 5,
+      "estimatedMarginPlusFeeUsdt": "50.125000",
+      "status": "completed",
+      "elapsedSeconds": 13.1453,
+      "withinProductionDeadline": true,
+      "caseId": "zec-latest-add-low-free-margin",
+      "repeat": 2,
+      "effort": "low",
+      "finishedAt": "2026-11-21T03:35:03.462449+00:00"
+    },
+    {
+      "jsonValid": true,
+      "schemaValid": true,
+      "modelParserValid": true,
+      "decision": {
+        "action": "follow",
+        "order_notional_fraction": "0.2",
+        "leverage": 10,
+        "reason": "账户权益仅1000U且无同向敞口；历史先验样本有限，ZEC近期样本杠杆约10x，故以约200U（20%权益）试仓10x，保留后续加仓的保证金与档位空间。"
+      },
+      "violations": [],
+      "usage": {
+        "prompt_tokens": 5470,
+        "completion_tokens": 1042,
+        "total_tokens": 6512,
+        "prompt_tokens_details": {
+          "cached_tokens": 5248
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 964
+        },
+        "prompt_cache_hit_tokens": 5248,
+        "prompt_cache_miss_tokens": 222
+      },
+      "finishReason": "stop",
+      "normalizedFraction": "0.2",
+      "requestedLeverage": 10,
+      "effectiveExecutionLeverage": 10,
+      "estimatedMarginPlusFeeUsdt": "20.10000",
+      "status": "completed",
+      "elapsedSeconds": 8.9486,
+      "withinProductionDeadline": true,
+      "caseId": "zec-initial",
+      "repeat": 2,
+      "effort": "high",
+      "finishedAt": "2026-11-21T03:35:11.852871+00:00"
+    }
+  ],
+  "summary": {
+    "byEffort": {
+      "low": {
+        "requests": 12,
+        "completed": 12,
+        "validJson": 12,
+        "validSchema": 12,
+        "validModelDecisions": 12,
+        "validWithin60Seconds": 12,
+        "observedDeadlineMisses": 0,
+        "apiErrors": 0,
+        "violations": 0,
+        "completedLatencySeconds": {
+          "n": 12,
+          "mean": 10.163191666666666,
+          "median": 9.591899999999999,
+          "min": 6.1376,
+          "max": 15.5147
+        },
+        "reasoningTokens": {
+          "n": 12,
+          "mean": 1378.3333333333333,
+          "median": 1271.0,
+          "min": 827,
+          "max": 2145
+        }
+      },
+      "high": {
+        "requests": 12,
+        "completed": 12,
+        "validJson": 12,
+        "validSchema": 12,
+        "validModelDecisions": 12,
+        "validWithin60Seconds": 12,
+        "observedDeadlineMisses": 0,
+        "apiErrors": 0,
+        "violations": 0,
+        "completedLatencySeconds": {
+          "n": 12,
+          "mean": 17.346375000000002,
+          "median": 17.0804,
+          "min": 8.9486,
+          "max": 27.7816
+        },
+        "reasoningTokens": {
+          "n": 12,
+          "mean": 2565.1666666666665,
+          "median": 2465.0,
+          "min": 964,
+          "max": 4341
+        }
+      }
+    },
+    "lowVsHigh": {
+      "comparablePairs": 12,
+      "sameFollowSkip": 12,
+      "bothFollowPairs": 12,
+      "absoluteNotionalFractionDifferencePercentagePoints": {
+        "n": 12,
+        "mean": 6.666666666666667,
+        "median": 5.0,
+        "min": 0.0,
+        "max": 20.0
+      },
+      "absoluteRequestedLeverageDifference": {
+        "n": 12,
+        "mean": 0.9166666666666666,
+        "median": 0.0,
+        "min": 0,
+        "max": 5
+      },
+      "sameRequestedLeverage": 9,
+      "exactValuesExcludingReason": 4
+    },
+    "repeatVariability": {
+      "low": {
+        "comparablePairs": 6,
+        "sameFollowSkip": 6,
+        "bothFollowPairs": 6,
+        "absoluteNotionalFractionDifferencePercentagePoints": {
+          "n": 6,
+          "mean": 5.0,
+          "median": 5.0,
+          "min": 0.0,
+          "max": 10.0
+        },
+        "absoluteRequestedLeverageDifference": {
+          "n": 6,
+          "mean": 1,
+          "median": 0.0,
+          "min": 0,
+          "max": 5
+        },
+        "sameRequestedLeverage": 4,
+        "exactValuesExcludingReason": 1
+      },
+      "high": {
+        "comparablePairs": 6,
+        "sameFollowSkip": 6,
+        "bothFollowPairs": 6,
+        "absoluteNotionalFractionDifferencePercentagePoints": {
+          "n": 6,
+          "mean": 8.333333333333334,
+          "median": 5.0,
+          "min": 0.0,
+          "max": 20.0
+        },
+        "absoluteRequestedLeverageDifference": {
+          "n": 6,
+          "mean": 0.8333333333333334,
+          "median": 0.0,
+          "min": 0,
+          "max": 5
+        },
+        "sameRequestedLeverage": 5,
+        "exactValuesExcludingReason": 2
+      }
+    }
+  },
+  "completedAt": "2026-11-21T03:35:11.858352+00:00"
+}
